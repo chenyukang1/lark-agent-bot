@@ -10,6 +10,7 @@ class LarkClient(object):
         self.app_id = lark.APP_ID
         self.app_secret = lark.APP_SECRET
         self.log_level = log_level
+        self.event_handler = None
 
     def register_event_handler(self, event_handler: EventDispatcherHandler):
         self.event_handler = event_handler
