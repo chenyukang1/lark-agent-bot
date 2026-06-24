@@ -30,7 +30,7 @@ class P2ImMessageReceiveV1Handler:
                     ),
                 )
 
-            except json.JSONDecodeError, KeyError, TypeError:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 self.reply_message(
                     data.event.message.chat_type,
                     data.event.message.chat_id,
@@ -42,19 +42,19 @@ class P2ImMessageReceiveV1Handler:
                 image_key = json.loads(data.event.message.content)["image_key"]
                 self.download_image(image_key=image_key)
 
-            except json.JSONDecodeError, KeyError, TypeError:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 self.reply_message(
                     data.event.message.chat_type,
                     data.event.message.chat_id,
                     data.event.message.message_id,
-                    "图片消息解析消息失败\nparse image message failed, image key not found",
+                    json.dumps({"text": "图片消息解析消息失败\nparse image message failed, image key not found"}),
                 )
         else:
             self.reply_message(
                 data.event.message.chat_type,
                 data.event.message.chat_id,
                 data.event.message.message_id,
-                "解析消息失败，请发送文本或图片消息\nparse message failed, please send text or image message",
+                json.dumps({"text": "解析消息失败，请发送文本或图片消息\nparse message failed, please send text or image message"}),
             )
 
     def download_image(self, image_key: str) -> bytes:
