@@ -5,7 +5,11 @@ load_dotenv()
 import lark_oapi
 from lark_oapi.core.enum import LogLevel
 
-from lark import LarkClient, P2ImMessageReceiveV1Handler
+from lark import (
+    LarkClient,
+    P2ImChatAccessEventBotP2PChatEnteredV1Handler,
+    P2ImMessageReceiveV1Handler,
+)
 
 
 def main():
@@ -18,6 +22,9 @@ def main():
     )
 
     p2_im_message_handler = P2ImMessageReceiveV1Handler(client=api_client)
+    p2_im_chat_bot_entered_handler = P2ImChatAccessEventBotP2PChatEnteredV1Handler(
+        client=api_client
+    )
 
     # 注册事件回调
     # Register event handler.
@@ -25,6 +32,9 @@ def main():
         lark_oapi.EventDispatcherHandler.builder("", "")
         .register_p2_im_message_receive_v1(
             lambda data: p2_im_message_handler.handle(data)
+        )
+        .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(
+            lambda data: p2_im_chat_bot_entered_handler.handle(data)
         )
         .build()
     )
