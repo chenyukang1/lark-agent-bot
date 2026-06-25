@@ -12,6 +12,11 @@ DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 DASHSCOPE_API_HOST = os.getenv("DASHSCOPE_API_HOST")
 LOCAL_JAVA_LOG_FILE_PATH = os.getenv("LOCAL_JAVA_LOG_FILE_PATH")
 
+if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST or not LOCAL_JAVA_LOG_FILE_PATH:
+    raise ValueError("DASHSCOPE_API_KEY, DASHSCOPE_API_HOST, LOCAL_JAVA_LOG_FILE_PATH 未配置!")
+
+if not os.path.exists(LOCAL_JAVA_LOG_FILE_PATH):
+    raise ValueError(f"文件 {LOCAL_JAVA_LOG_FILE_PATH} 不存在!")
 
 async def run_agent(user_instruction: str):
     result = await agent.ainvoke(
@@ -99,12 +104,6 @@ def analyze_local_java_error_logs(max_lines: int = 100):
     定位java服务报错优先使用此工具精准定位报错根因，禁止全盘读取原始日志
     :param max_lines: 读取的最大行数，防止大文件撑爆大模型上下文
     """
-    if not LOCAL_JAVA_LOG_FILE_PATH:
-        return "LOCAL_JAVA_LOG_FILE_PATH 未配置!"
-
-    if not os.path.exists(LOCAL_JAVA_LOG_FILE_PATH):
-        return f"错误：文件 {LOCAL_JAVA_LOG_FILE_PATH} 不存在。"
-
     return analyze_error_logs(LOCAL_JAVA_LOG_FILE_PATH, 10)
 
 
@@ -116,25 +115,6 @@ llm = ChatOpenAI(
     model="qwen-max",
     temperature=0.1,  # 调低随机性，让诊断逻辑更严谨
 )
-
-# prompt = ChatPromptTemplate.from_messages(
-#     [
-#         (
-#             "system",
-#             "你是一个资深的 DevOps 故障定位专家。你被赋予了读取本地文件和在特定目录下执行构建命令的权限。\n"
-#             "当用户给你一个构建报错任务时，你应该按照以下逻辑思考：\n"
-#             "1. 使用 `run_build_and_compile` 工具去触发构建，观察具体的报错输出。\n"
-#             "2. 如果控制台输出不够详细，可以使用 `read_local_file` 去查看具体的日志文件（如 target/error.log）。\n"
-#             "3. 仔细阅读报错堆栈（StackTrace），定位是依赖问题、语法错误还是配置问题，并给出极其具建设性的修复建议。\n"
-#             "注意：中途调用工具时请直接执行，不要向用户确认。",
-#         ),
-#         MessagesPlaceholder(variable_name="chat_history"),
-#         ("human", "{input}"),
-#         MessagesPlaceholder(
-#             variable_name="agent_scratchpad"
-#         ),  # 必须保留，用于存放 Agent 的思考过程
-#     ]
-# )
 
 system_prompt = """
 你是一个资深的运维排障专家你是一个自动化运维排障专家，请利用工具分析日志中的错误。

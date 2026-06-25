@@ -1,6 +1,8 @@
 import asyncio
 from asyncio import subprocess
 
+import lark_oapi as lark
+
 CLAUDE_TIMEOUT_SECONDS = 180
 
 
@@ -23,7 +25,7 @@ async def run_claude_code_agent(project_path: str, user_instruction: str):
             cwd=project_path,  # 限制它的初始工作目录
         )
 
-        print("Claude Code Agent 已启动，正在自动分析故障中...")
+        lark.logger.debug("Claude Code Agent 已启动，正在自动分析故障中...")
 
         # 3. 等待 Claude Code 自动运行它所需的工具（这个过程可能需要 1-3 分钟）
         try:
@@ -39,18 +41,19 @@ async def run_claude_code_agent(project_path: str, user_instruction: str):
         stdout_text = stdout.decode("utf-8", errors="replace")
         stderr_text = stderr.decode("utf-8", errors="replace")
         if process.returncode != 0:
-            return f"Claude Code 执行失败:\n{stderr_text or stdout_text}"
+            lark.logger.error(f"Claude Code 执行失败, returncode: {process.returncode}, stderr: {stderr_text}")
+            return f"Claude Code 执行失败, 请联系开发人员排查"
 
         # 5. 调用飞书 API，把 Claude 帮你想好的分析报告延迟回复给用户
-        print("Claude Code 分析完毕, 准备发送给飞书...")
+        lark.logger.debug("Claude Code 分析完毕, 准备发送给飞书...")
 
         agent_output = stdout_text
         if stderr_text:
             agent_output += f"\n[系统错误]\n{stderr_text}"
 
-        print(f"Claude Code 分析结果: {agent_output}")
+        lark.logger.debug(f"Claude Code 分析结果: {agent_output}")
         return agent_output
 
     except Exception as e:
-        print(f"唤起 Claude Code 失败: {e}")
+        lark.logger.error(f"唤起 Claude Code 失败: {e}")
         return "唤起 Claude Code 失败, 联系开发人员排查"
