@@ -38,6 +38,7 @@ class SendAlarmCardPayload(BaseModel):
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
     content: str
+    status: bool
 
 class SendMessageErrorDetail(BaseModel):
     code: Any = None
@@ -71,14 +72,6 @@ class P2ImMessageReceiveV1Handler:
 
             try:
                 text_content = json.loads(data.event.message.content)["text"]
-                send_alarm_card_payload = SendAlarmCardPayload(
-                    receive_id_type=receive_id_type,
-                    receive_id=receive_id,
-                    content="收到消息，正在分析中...",
-                )
-                create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
-                card_message_id = create_message_resp.data.message_id
-
             except Exception as e:
                 lark.logger.error(f"文本消息解析失败, error: {e}")
                 send_message(
@@ -86,24 +79,35 @@ class P2ImMessageReceiveV1Handler:
                     SendMessagePayload(
                         receive_id_type=receive_id_type,
                         receive_id=receive_id,
-                        msg_type=message_id,
+                        msg_type="text",
                         content=json.dumps({"text": "文本消息解析失败"}),
                     ),
                 )
                 return
+
+            send_alarm_card_payload = SendAlarmCardPayload(
+                receive_id_type=receive_id_type,
+                receive_id=receive_id,
+                content="收到消息，正在分析中...",
+            )
+            create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
+            card_message_id = create_message_resp.data.message_id
 
             agent_task = asyncio.create_task(agent.run_agent(text_content))
 
             def _handle_agent_result(task: asyncio.Task) -> None:
                 try:
                     result = task.result()
+                    status = True
                 except Exception as e:
                     lark.logger.exception(f"agent执行失败, error: {e}")
                     result = f"分析失败: {e}"
+                    status = False
 
                 update_alarm_card_payload = UpdateAlarmCardPayload(
                     message_id=card_message_id,
                     content=result,
+                    status=status,
                 )
                 update_alarm_card(self.client, update_alarm_card_payload)
 
@@ -282,7 +286,7 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
                 "template_id": ALERT_CARD_ID,
                 "template_variable": {
                     "content": payload.content,
-                    "status": "分析完成",
+                    "status": "分析完成" if payload.status else "分析失败",
                     "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
                         "%Y-%m-%d %H:%M:%S (UTC+8)"
                     ),

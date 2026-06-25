@@ -42,7 +42,7 @@ async def run_claude_code_agent(project_path: str, user_instruction: str):
         stderr_text = stderr.decode("utf-8", errors="replace")
         if process.returncode != 0:
             lark.logger.error(f"Claude Code 执行失败, returncode: {process.returncode}, stderr: {stderr_text}")
-            return f"Claude Code 执行失败, 请联系开发人员排查"
+            return "Claude Code 执行失败, 请联系开发人员排查"
 
         # 5. 调用飞书 API，把 Claude 帮你想好的分析报告延迟回复给用户
         lark.logger.debug("Claude Code 分析完毕, 准备发送给飞书...")
