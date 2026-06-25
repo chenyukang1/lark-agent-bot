@@ -1,10 +1,10 @@
 import asyncio
 from asyncio import subprocess
 
+CLAUDE_TIMEOUT_SECONDS = 180
 
-async def run_claude_code_agent(
-    project_path: str, user_instruction: str, message_id: str
-):
+
+async def run_claude_code_agent(project_path: str, user_instruction: str):
     """
     后台异步任务：将任务派发给本地的 Claude Code Agent
     """
@@ -26,15 +26,28 @@ async def run_claude_code_agent(
         print("Claude Code Agent 已启动，正在自动分析故障中...")
 
         # 3. 等待 Claude Code 自动运行它所需的工具（这个过程可能需要 1-3 分钟）
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), CLAUDE_TIMEOUT_SECONDS
+            )
+        except TimeoutError:
+            process.kill()
+            await process.communicate()
+            return "Claude Code 分析超时, 请稍后重试"
 
         # 4. 获取 Claude Agent 的最终执行结果
-        agent_output = stdout.decode("utf-8")
-        if stderr:
-            agent_output += f"\n[系统错误]\n{stderr.decode('utf-8')}"
+        stdout_text = stdout.decode("utf-8", errors="replace")
+        stderr_text = stderr.decode("utf-8", errors="replace")
+        if process.returncode != 0:
+            return f"Claude Code 执行失败:\n{stderr_text or stdout_text}"
 
         # 5. 调用飞书 API，把 Claude 帮你想好的分析报告延迟回复给用户
         print("Claude Code 分析完毕, 准备发送给飞书...")
+
+        agent_output = stdout_text
+        if stderr_text:
+            agent_output += f"\n[系统错误]\n{stderr_text}"
+
         print(f"Claude Code 分析结果: {agent_output}")
         return agent_output
 

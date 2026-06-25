@@ -1,22 +1,22 @@
+import asyncio
 import json
 import os
 from datetime import datetime, timedelta, timezone
 
 import lark_oapi as lark
-from lark_oapi.api.cardkit.v1 import (
-    ContentCardElementRequest,
-    ContentCardElementRequestBody,
-    ContentCardElementResponse,
-)
 from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
+    CreateMessageResponse,
     GetImageRequest,
     P2ImChatAccessEventBotP2pChatEnteredV1,
     P2ImMessageReceiveV1,
-    ReplyMessageRequest,
-    ReplyMessageRequestBody,
+    PatchMessageRequest,
+    PatchMessageRequestBody,
+    PatchMessageResponse,
 )
+
+import agent
 
 ALERT_CARD_ID = os.getenv("ALERT_CARD_ID")
 WELCOME_CARD_ID = os.getenv("WELCOME_CARD_ID")
@@ -39,44 +39,10 @@ class P2ImMessageReceiveV1Handler:
 
             try:
                 text_content = json.loads(data.event.message.content)["text"]
-                # self.reply_message(
-                #     chat_type,
-                #     receive_id,
-                #     message_id,
-                #     json.dumps(
-                #         {
-                #             "text": "收到消息，正在分析中...",
-                #         }
-                #     ),
-                # )
-                send_alarm_card(self.client, receive_id_type, receive_id)
-
-                # 构造请求对象
-                request: ContentCardElementRequest = (
-                    ContentCardElementRequest.builder()
-                    .card_id(ALERT_CARD_ID)
-                    .element_id("A111111")
-                    .request_body(
-                        ContentCardElementRequestBody.builder()
-                        .uuid("a0d69e20-1dd1-458b-k525-dfeca4015204")
-                        .content("这是更新后的文本内容。将以打字机式的效果输出")
-                        .sequence(1)
-                        .build()
-                    )
-                    .build()
+                create_message_resp = send_alarm_card(
+                    self.client, "收到消息，正在分析中...", receive_id_type, receive_id
                 )
-
-                # 发起请求
-                response: ContentCardElementResponse = (
-                    self.client.cardkit.v1.card_element.content(request)
-                )
-
-                # 处理失败返回
-                if not response.success():
-                    lark.logger.error(
-                        f"client.cardkit.v1.card_element.content failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}, resp: \n{json.dumps(json.loads(response.raw.content), indent=4, ensure_ascii=False)}"
-                    )
-                    return
+                card_message_id = create_message_resp.data.message_id
 
             except json.JSONDecodeError, KeyError, TypeError:
                 send_message(
@@ -87,19 +53,11 @@ class P2ImMessageReceiveV1Handler:
                     json.dumps({"text": "文本消息解析失败"}),
                 )
 
-            # agent_task = asyncio.create_task(
-            #     agent.run_claude_code_agent(
-            #         "/Users/chenyk/Downloads/logs",
-            #         text_content,
-            #         data.event.message.message_id,
-            #     )
-            # )
+            agent_task = asyncio.create_task(agent.run_agent(text_content))
 
-            # agent_task.add_done_callback(
-            #     lambda t: self.reply_message(
-            #         chat_type, receive_id, message_id, json.dumps({"text": t.result()})
-            #     )
-            # )
+            agent_task.add_done_callback(
+                lambda t: update_alarm_card(self.client, t.result(), card_message_id)
+            )
         elif data.event.message.message_type == "image":
             try:
                 image_key = json.loads(data.event.message.content)["image_key"]
@@ -139,53 +97,6 @@ class P2ImMessageReceiveV1Handler:
 
         return response.data.content
 
-    def reply_message(
-        self, chat_type: str, receive_id: str, message_id: str, content: str
-    ) -> None:
-        # 单聊
-        if chat_type == "p2p":
-            p2p_request: CreateMessageRequest = (
-                CreateMessageRequest.builder()
-                .receive_id_type("chat_id")
-                .request_body(
-                    CreateMessageRequestBody.builder()
-                    .receive_id(receive_id)
-                    .msg_type("text")
-                    .content(content)
-                    .build()
-                )
-                .build()
-            )
-            # 使用OpenAPI发送消息
-            # Use send OpenAPI to send messages
-            # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
-            response = self.client.im.v1.message.create(p2p_request)
-
-            if not response.success():
-                raise Exception(
-                    f"client.im.v1.message.create failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
-                )
-
-        # 群组
-        else:
-            group_request: ReplyMessageRequest = (
-                ReplyMessageRequest.builder()
-                .message_id(message_id)
-                .request_body(
-                    ReplyMessageRequestBody.builder()
-                    .content(content)
-                    .msg_type("text")
-                    .build()
-                )
-                .build()
-            )
-            response = self.client.im.v1.message.reply(group_request)
-
-            if not response.success():
-                raise Exception(
-                    f"client.im.v1.message.reply failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
-                )
-
 
 class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
     def __init__(self, client: lark.Client) -> None:
@@ -199,7 +110,9 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 
 # 发送消息
 # # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
-def send_message(client, receive_id_type, receive_id, msg_type, content):
+def send_message(
+    client, receive_id_type, receive_id, msg_type, content
+) -> CreateMessageResponse:
     request = (
         CreateMessageRequest.builder()
         .receive_id_type(receive_id_type)
@@ -216,7 +129,7 @@ def send_message(client, receive_id_type, receive_id, msg_type, content):
     # 使用发送OpenAPI发送通知卡片，你可以在API接口中打开 API 调试台，快速复制调用示例代码
     # Use send OpenAPI to send notice card. You can open the API debugging console in the API interface and quickly copy the sample code for API calls.
     # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
-    response = client.im.v1.message.create(request)
+    response: CreateMessageResponse = client.im.v1.message.create(request)
     if not response.success():
         raise Exception(
             f"client.im.v1.message.create failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
@@ -243,13 +156,15 @@ def send_welcome_card(client, open_id):
 # 发送告警卡片
 # Construct an alarm card
 # https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card#718fe26b
-def send_alarm_card(client, receive_id_type, receive_id):
+def send_alarm_card(client, msg, receive_id_type, receive_id) -> CreateMessageResponse:
     content = json.dumps(
         {
             "type": "template",
             "data": {
                 "template_id": ALERT_CARD_ID,
                 "template_variable": {
+                    "content": msg,
+                    "status": "分析中",
                     "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
                         "%Y-%m-%d %H:%M:%S (UTC+8)"
                     ),
@@ -258,3 +173,36 @@ def send_alarm_card(client, receive_id_type, receive_id):
         }
     )
     return send_message(client, receive_id_type, receive_id, "interactive", content)
+
+
+def update_alarm_card(client, update_content, message_id) -> PatchMessageResponse:
+    content = json.dumps(
+        {
+            "type": "template",
+            "data": {
+                "template_id": ALERT_CARD_ID,
+                "template_variable": {
+                    "content": update_content,
+                    "status": "分析完成",
+                    "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
+                        "%Y-%m-%d %H:%M:%S (UTC+8)"
+                    ),
+                },
+            },
+        }
+    )
+
+    request: PatchMessageRequest = (
+        PatchMessageRequest.builder()
+        .message_id(message_id)
+        .request_body(PatchMessageRequestBody.builder().content(content).build())
+        .build()
+    )
+
+    response: PatchMessageResponse = client.im.v1.message.patch(request)
+    if not response.success():
+        raise Exception(
+            f"client.im.v1.message.patch failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
+        )
+
+    return response
