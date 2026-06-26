@@ -62,7 +62,6 @@ class P2ImMessageReceiveV1Handler:
     def handle(self, data: P2ImMessageReceiveV1) -> None:
         if data.event.message.message_type == "text":
             chat_type = data.event.message.chat_type
-            message_id = data.event.message.message_id
             chat_id = data.event.message.chat_id
             open_id = data.event.sender.sender_id.open_id
             lark.logger.debug(f"open_id: {open_id}")
@@ -93,7 +92,10 @@ class P2ImMessageReceiveV1Handler:
             create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
             card_message_id = create_message_resp.data.message_id
 
-            agent_task = asyncio.create_task(agent.run_agent(text_content))
+            if "构建" in text_content:
+                agent_task = asyncio.create_task(run_jenkins_agent(text_content))
+            else:
+                agent_task = asyncio.create_task(agent.run_agent(text_content))
 
             def _handle_agent_result(task: asyncio.Task) -> None:
                 try:
@@ -161,6 +163,10 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 
         return send_welcome_card(self.client, open_id)
 
+
+async def run_jenkins_agent(*args, **kwargs) -> str:
+    from agent import run_jenkins_agent as _run_jenkins_agent
+    return await _run_jenkins_agent(*args, **kwargs)
 
 # 发送消息
 # # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create

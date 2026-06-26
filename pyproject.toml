@@ -10,4 +10,5 @@ dependencies = [
     "langgraph>=1.2.6",
     "lark-oapi>=1.4.8",
     "python-dotenv>=1.0.0",
+    "python-jenkins>=1.8.3",
 ]

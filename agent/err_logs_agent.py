@@ -146,16 +146,9 @@ system_prompt = """
 agent = create_agent(
     model=llm, tools=[analyze_local_java_error_logs], system_prompt=system_prompt
 )
-# result = agent.invoke(
-#     {
-#         "messages": [
-#             {
-#                 "role": "user",
-#                 "content": "当前java服务有什么问题？",
-#             }
-#         ]
-#     }
-# )
 
+if __name__ == "__main__":
+    import asyncio
 
-# print(result["messages"][-1].content_blocks)
+    result = asyncio.run(run_agent("当前java服务有什么问题？"))
+    print(result)
