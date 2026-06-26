@@ -148,5 +148,7 @@ agent = create_agent(
 )
 
 if __name__ == "__main__":
-    result = run_agent("当前java服务有什么问题？")
-    print(result["messages"][-1].content)
+    import asyncio
+
+    result = asyncio.run(run_agent("当前java服务有什么问题？"))
+    print(result)

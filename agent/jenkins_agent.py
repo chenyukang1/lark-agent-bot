@@ -35,7 +35,7 @@ MAX_CONSOLE_LOG_CHARS = 12000
 MAX_ERROR_SNIPPETS = 20
 GIT_PULL_TIMEOUT = 60
 
-_synced_repos: set[str] = set()
+_synced_repos: set[str] = set[str]()
 
 if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST:
     raise ValueError("DASHSCOPE_API_KEY, DASHSCOPE_API_HOST 未配置!")
@@ -53,6 +53,7 @@ if not STAGING_JAVA_PROJECT_PATH:
     raise ValueError("STAGING_JAVA_PROJECT_PATH 未配置!")
 
 async def run_jenkins_agent(user_instruction: str) -> str:
+    _synced_repos.clear()
     result = await agent.ainvoke(
         {
             "messages": [
@@ -531,5 +532,3 @@ if __name__ == "__main__":
     import asyncio
 
     print(asyncio.run(run_jenkins_agent("当前 staging_java 构建失败是谁的 commit 导致的？")))
-
-    # print(_pull_latest_changes(STAGING_JAVA_PROJECT_PATH))
