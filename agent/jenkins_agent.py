@@ -191,7 +191,70 @@ def search_file_commit_history(
 
 
 @tool
-def get_commit_details(commit_id: str, job_name: str) -> str:
+def get_build_commit_range_by_page(job_name: str, commit_range: str, limit: int = 20, skip: int = 0) -> str:
+    """
+    支持分页获取某次构建涉及的 Commit 记录清单。
+    如果提交记录过多，大模型应通过调整 skip 参数进行多轮循环调用（翻页），直到找完所有记录。
+ 
+    :param project_path: 项目本地绝对路径。
+    :param commit_range: Commit 区间字符串，格式为 '旧CommitID..新CommitID'。
+    :param limit: 每页获取的 Commit 数量，默认 20 条，防止 Token 爆炸。
+    :param skip: 跳过的 Commit 数量（偏移量）。第一页传 0，第二页传 20，以此类推。
+    """
+    resolved_project_path = _resolve_project_path(job_name)
+    if not resolved_project_path:
+        return (
+            "未配置本地项目路径, 请设置环境变量。"
+        )
+
+    if not os.path.isdir(resolved_project_path):
+        return f"本地项目路径不存在: {resolved_project_path}"
+
+    sync_error = _ensure_repo_synced(resolved_project_path)
+    if sync_error:
+        return sync_error
+
+    try:
+        # 1. 先查一下这个区间总共有多少个 Commit
+        count_cmd = ["git", "rev-list", "--count", commit_range]
+        result = _run_git_command(resolved_project_path, count_cmd[1:])
+        if result.returncode != 0:
+            return f"获取 Git count 失败: {result.stderr}"
+
+        total_commits = int(result.stdout.strip())
+ 
+        # 2. 分页拉取 Commit 摘要和修改的文件名
+        # --skip 和 -n 是 git log 原生支持的分页参数
+        cmd = [
+            "git", "log", commit_range,
+            f"--skip={skip}", f"-n", str(limit),
+            "--pretty=format:👉 [COMMIT] %h | 作者: %an | 说明: %s\n修改文件:",
+            "--name-only"
+        ]
+ 
+        result = _run_git_command(resolved_project_path, cmd[1:])
+        
+        if result.returncode != 0:
+            return f"获取 Git 变更日志失败: {result.stderr}"
+ 
+        current_output = result.stdout.strip()
+        has_more = (skip + limit) < total_commits
+        next_skip = skip + limit
+ 
+        # 3. 构造返回文本，给大模型留下极其明确的“翻页线索”
+        summary = (
+            f"📊 [分页导航] 当前显示第 {skip+1} 到 {min(next_skip, total_commits)} 条 (总计 {total_commits} 条 Commit)。\n"
+            f"💡 是否还有下一页: {'【是】' if has_more else '【否】'}\n"
+            f"💡 如下一页为【是】，请在下轮循环中继续调用本工具，并设置参数 skip={next_skip}。\n\n"
+            f"=== 变更集切片 ===\n\n{current_output}"
+        )
+        return summary
+        
+    except Exception as e:
+        return f"执行 Git 分页查询异常: {str(e)}"
+
+@tool
+def get_commit_diff(commit_id: str, job_name: str) -> str:
     """
     查看某个 commit 的详细变更，包括作者、提交说明、变更文件列表。
     用于核对 Jenkins changeSet 中的 commit 是否确实改动了报错相关文件。
@@ -218,20 +281,28 @@ def get_commit_details(commit_id: str, job_name: str) -> str:
             [
                 "show",
                 commit_id,
-                "--pretty=format:commit %H%n作者: %an <%ae>%n日期: %ad%n说明: %s",
-                "--date=iso",
-                "--name-only",
+                "--unified=3",
+                "--stat"
             ],
         )
         if show_result.returncode != 0:
             return f"查询 commit 详情失败: {show_result.stderr.strip()}"
 
-        return (
-            f"项目【{resolved_project_path}】中 commit【{commit_id}】详情：\n"
-            f"{show_result.stdout.strip()}"
-        )
+        output = show_result.stdout.strip()
+        if not output:
+            return f"提示：Commit 【{commit_id}】 成功读取，但未发现任何可读的代码文本变更（可能该提交只修改了二进制文件或权限）。"
+
+        MAX_CHARS = 4000
+        if len(output) > MAX_CHARS:
+            return (
+                f"⚠️ [警告：该 Commit 改动文件过多，已被系统自动截取前 {MAX_CHARS} 个字符]\n\n"
+                f"{output[:MAX_CHARS]}\n\n"
+                f"... (后续还有大量 Diff 文本已省略，如需查看特定文件，请尝试通过其他精准命令读取)"
+            )
+
+        return f"📊 【Commit {commit_id} 核心变更详情】\n\n{output}"
     except Exception as e:
-        return f"查询 commit 详情异常: {e}"
+        return f"查询 commit 变更详情异常: {e}"
 
 
 @tool
@@ -499,7 +570,7 @@ system_prompt = """
 
 ### 🚨 Jenkins 构建失败归因报告
 - **Job / 构建号**：[job_name #build_number]
-- **构建链接**：[build_url](必须以http/https开头)
+- **构建链接**：[build_url](调用`get_latest_failed_build_info`时得到的build_url)
 - **失败现象**：[一句话描述编译失败/测试失败/部署失败等]
 - **关键报错文件**：[从日志提取的文件路径；没有则写“未定位到具体文件”]
 - **最可能提交人**：[姓名/账号]
@@ -515,17 +586,71 @@ system_prompt = """
 2. [给出具体修复方向，例如修改哪个文件、补哪个依赖、修哪个测试]
 """
 
+new_prompt = """
+为了用最低的 Token 成本、最快的速度完成任务，你必须像高级侦探一样，严格遵守以下“四步破案流水线”，绝对禁止跨步骤瞎猜或乱调工具：
+
+==============================
+🕵️‍♂️ 破案流水线钢铁律令：
+==============================
+
+第一步：看日志，锁定“受害者”
+---------------------------------------
+1. **模糊名称转换（Job名称映射）**：用户可能会使用口语化的项目名称。你必须在心里进行映射后再传给工具。映射规则如下：
+   - test_java, java测试环境 -> test_java
+   - staging-interlace-assets, java stage环境, java staging环境 -> staging-interlace-assets
+2. 你的首要动作必须是调用 `get_latest_failed_build_info` 工具,，传入映射后的 job_name，获取详细的构建失败信息。
+3. 仔细阅读返回的日志切片，从中提取出【核心报错类型】（如 NullPointerException、SyntaxError）以及【报错文件相对路径】（如 src/components/Pay.js）和【报错行号】。
+4. 如果日志太长没有提取到明确的文件路径，请默认将后续的排查重心放在配置文件（如 package.json、pom.xml、vite.config.ts）上。
+
+★【触发闪电战破案条件】★：
+如果日志切片极其精准，同时返回了【明确的文件相对路径】（如 src/utils/auth.js）和【明确的报错行号】（如第 24 行），你必须立刻启动闪电战模式，跳过复杂的区间翻页，直接执行以下动作：
+1. 立即调用 `get_file_line_blame` 工具，传入文件名和行号，直接查出该行代码背后的致命 Commit ID 和作者。
+2. 拿到 Commit ID 后，直接跳到【第三步：看 Diff】核对代码，随后结案！
+
+第二步：常规战（无精准行号时使用）：查区间，缩小“嫌疑圈”
+---------------------------------------
+1. 知道了受害文件后，你必须调用 `get_build_commit_range_by_page` 工具，传入 Jenkins 提供的 Commit 区间（形如 A..B）。
+2. 在工具返回的 Commit 清单中，开启“特征比对模式”：哪一个 Commit 涉及的修改文件列表里，恰好包含了你在第一步里找到的【报错文件路径】？那么这个 Commit 的作者就是头号嫌疑人！
+3. ⚠️【超长日志翻页铁律】：如果本次构建涉及的 Commit 实在太多，且当前页工具提示 `是否还有下一页: 【是】`，只要你还没在当前页找到动过【报错文件】的 Commit，你就必须修改 `skip` 参数进行多轮循环（Loop）调用，直到翻页找到为止。一旦在某一页找到了动过该文件的 Commit，立即停止翻页，见好就收！
+
+第三步：看 Diff，实施“证据确凿的绝杀”
+---------------------------------------
+1. 锁定嫌疑 Commit ID 后，你必须调用 `get_commit_diff` 工具，传入对应的 `commit_id` 和项目路径。
+2. 仔细阅读 Diff 文本中带有 `+`（新增）和 `-`（删除）的代码行。结合第一步的报错信息，分析为什么这几行改动会引发编译或运行崩溃。
+
+第四步：规范结案，输出飞书工单
+---------------------------------------
+证据确凿后，直接停止调用任何工具，严格按照以下 Markdown 格式输出最终结论。禁止添加任何“好的”、“没问题”等前后寒暄词，直接填表输出：
+
+### 🚨 Jenkins 故障诊断报告
+- **Job / 构建号**：[job_name #build_number]
+- **构建链接**：[build_url](调用`get_latest_failed_build_info`时得到的build_url)
+- **失败现象**：[一句话描述编译失败/测试失败/部署失败等]
+- **当前项目 / 任务**：[从背景里提取的任务名]
+- **核心报错类型**：[例如：TypeError / DependencyResolutionException]
+- **致命提交 (Commit)**：`[7位简短Commit ID]` (作者: [作者姓名])
+
+---
+
+### 🔍 代码级根因分析
+> [用1-2大白话解释：XX同学在本次提交中修改了 XXX 文件，将原本的 XXX 删除了/改写成了 XXX。但是，这导致了 [结合第一步报错说明具体原因]，从而导致 Jenkins 编译/打包被阻断。]
+
+### 🛠️ 建议修复方案
+1. **修复建议**：[给出具体的修改建议。如果是代码问题，请在此处提供一个明晰的修改后示例代码块]
+2. **验证命令**：[告诉他应该执行什么本地命令重新测试，如 npm run build 或 mvn clean package]
+"""
+
 
 agent = create_agent(
     model=llm,
     tools=[
         get_latest_failed_build_info,
         extract_failed_build_console_errors,
-        search_file_commit_history,
-        get_commit_details,
+        get_build_commit_range_by_page,
+        get_commit_diff,
         blame_file_at_line,
     ],
-    system_prompt=system_prompt,
+    system_prompt=new_prompt,
 )
 
 if __name__ == "__main__":

@@ -165,7 +165,7 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 
 
 async def run_jenkins_agent(*args, **kwargs) -> str:
-    from agent import run_jenkins_agent as _run_jenkins_agent
+    from agent.jenkins_agent import run_jenkins_agent as _run_jenkins_agent
     return await _run_jenkins_agent(*args, **kwargs)
 
 # 发送消息
