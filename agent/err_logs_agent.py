@@ -146,16 +146,7 @@ system_prompt = """
 agent = create_agent(
     model=llm, tools=[analyze_local_java_error_logs], system_prompt=system_prompt
 )
-# result = agent.invoke(
-#     {
-#         "messages": [
-#             {
-#                 "role": "user",
-#                 "content": "当前java服务有什么问题？",
-#             }
-#         ]
-#     }
-# )
 
-
-# print(result["messages"][-1].content_blocks)
+if __name__ == "__main__":
+    result = run_agent("当前java服务有什么问题？")
+    print(result["messages"][-1].content)

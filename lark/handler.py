@@ -93,7 +93,10 @@ class P2ImMessageReceiveV1Handler:
             create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
             card_message_id = create_message_resp.data.message_id
 
-            agent_task = asyncio.create_task(agent.run_agent(text_content))
+            if "构建" in text_content:
+                agent_task = asyncio.create_task(agent.run_jenkins_agent(text_content))
+            else:
+                agent_task = asyncio.create_task(agent.run_agent(text_content))
 
             def _handle_agent_result(task: asyncio.Task) -> None:
                 try:
