@@ -227,7 +227,7 @@ def get_build_commit_range_by_page(job_name: str, commit_range: str, limit: int 
         # --skip 和 -n 是 git log 原生支持的分页参数
         cmd = [
             "git", "log", commit_range,
-            f"--skip={skip}", f"-n", str(limit),
+            f"--skip={skip}", "-n", str(limit),
             "--pretty=format:👉 [COMMIT] %h | 作者: %an | 说明: %s\n修改文件:",
             "--name-only"
         ]
@@ -604,7 +604,7 @@ new_prompt = """
 
 ★【触发闪电战破案条件】★：
 如果日志切片极其精准，同时返回了【明确的文件相对路径】（如 src/utils/auth.js）和【明确的报错行号】（如第 24 行），你必须立刻启动闪电战模式，跳过复杂的区间翻页，直接执行以下动作：
-1. 立即调用 `get_file_line_blame` 工具，传入文件名和行号，直接查出该行代码背后的致命 Commit ID 和作者。
+1. 立即调用 `blame_file_at_line` 工具，传入文件名和行号，直接查出该行代码背后的致命 Commit ID 和作者。
 2. 拿到 Commit ID 后，直接跳到【第三步：看 Diff】核对代码，随后结案！
 
 第二步：常规战（无精准行号时使用）：查区间，缩小“嫌疑圈”
@@ -615,7 +615,7 @@ new_prompt = """
 
 第三步：看 Diff，实施“证据确凿的绝杀”
 ---------------------------------------
-1. 锁定嫌疑 Commit ID 后，你必须调用 `get_commit_diff` 工具，传入对应的 `commit_id` 和项目路径。
+1. 锁定嫌疑 Commit ID 后，你必须调用 `get_commit_diff` 工具，传入对应的 `commit_id` 和 `job_name`。
 2. 仔细阅读 Diff 文本中带有 `+`（新增）和 `-`（删除）的代码行。结合第一步的报错信息，分析为什么这几行改动会引发编译或运行崩溃。
 
 第四步：规范结案，输出飞书工单
