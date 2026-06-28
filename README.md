@@ -11,9 +11,10 @@
 
 该项目使用 `lark-oapi` 作为飞书 SDK，并通过 `langchain` / `langchain-openai` 调用本地分析 Agent。
 
-## 运行截图
+## 效果展示
 
-[运行截图](docs/image.png)
+![运行截图](docs/image.png)
+![jenkins构建失败](docs/jenkins-lark.jpeg)
 
 ## 许可
 
