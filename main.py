@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from app_logging import setup_logging
+
+setup_logging()
+
 import lark_oapi
 
 from lark import (
