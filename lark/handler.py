@@ -20,6 +20,7 @@ from lark_oapi.api.im.v1 import (
 from pydantic import BaseModel, ValidationError
 
 import agent
+from lark.feishu_mapping import resolve_open_id
 
 ALERT_CARD_ID = os.getenv("ALERT_CARD_ID")
 WELCOME_CARD_ID = os.getenv("WELCOME_CARD_ID")
@@ -299,9 +300,6 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
 
     return response
 
-def _resolve_open_id(email: str) -> str:
-    return "ou_e640400930e60ca32fab973bb3dcb867"
-
 def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_type: str, receive_id: str, task: asyncio.Task) -> None:
     try:
         agent_output = task.result()
@@ -314,14 +312,19 @@ def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_ty
 
             git_email = metadata.get("email")
             git_name = metadata.get("name")
-            open_id = _resolve_open_id(git_email)
+            open_id = resolve_open_id(git_email)
             if open_id:
                 feishu_at_tag = f'<at user_id="{open_id}"></at>'
+            elif git_name:
+                feishu_at_tag = f'<at user_id="{open_id}"></at>'
             else:
-                feishu_at_tag = f'@{git_name} (请前往AI后台绑定飞书)'
+                feishu_at_tag = None
 
             report_content = re.sub(r'\$\$METADATA:.*?\$\$', '', agent_output).strip()
-            notify_content = json.dumps({"text": f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，已自动为你完成分析，请尽快修复"})
+            if feishu_at_tag:
+                notify_content = json.dumps({"text": f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"})
+            else:
+                notify_content = None
         else:
             lark.logger.warning(f"agent_output 中没有找到元数据标签")
             report_content = agent_output

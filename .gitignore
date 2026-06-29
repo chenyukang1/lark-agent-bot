@@ -11,3 +11,6 @@ wheels/
 
 # Environment variables
 .env
+
+# Local Feishu email -> open_id mappings
+feishu_mapping.json
