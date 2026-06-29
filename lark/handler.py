@@ -87,7 +87,7 @@ class P2ImMessageReceiveV1Handler:
             send_alarm_card_payload = SendAlarmCardPayload(
                 receive_id_type=receive_id_type,
                 receive_id=receive_id,
-                content="收到消息，正在分析中...",
+                content="收到故障分析任务，正在分析中...",
             )
             create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
             card_message_id = create_message_resp.data.message_id

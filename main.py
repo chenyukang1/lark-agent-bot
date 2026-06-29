@@ -1,29 +1,34 @@
+import threading
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import lark_oapi
-from lark_oapi.core.enum import LogLevel
 
 from lark import (
-    LarkClient,
+    lark_api_client,
+    lark_client,
     P2ImChatAccessEventBotP2PChatEnteredV1Handler,
     P2ImMessageReceiveV1Handler,
 )
 
 
-def main():
-    # Create API client for sending messages
-    api_client = (
-        lark_oapi.Client.builder()
-        .app_id(lark_oapi.APP_ID)
-        .app_secret(lark_oapi.APP_SECRET)
-        .build()
-    )
+def start_webhook_server() -> None:
+    from webhook.app import run_webhook_server
 
-    p2_im_message_handler = P2ImMessageReceiveV1Handler(client=api_client)
+    thread = threading.Thread(target=run_webhook_server, daemon=True)
+    thread.start()
+    lark_oapi.logger.info("Jenkins webhook 服务已在后台启动")
+
+
+def main():
+    start_webhook_server()
+
+    # Create API client for sending messages
+    p2_im_message_handler = P2ImMessageReceiveV1Handler(client=lark_api_client.client)
     p2_im_chat_bot_entered_handler = P2ImChatAccessEventBotP2PChatEnteredV1Handler(
-        client=api_client
+        client=lark_api_client.client
     )
 
     # 注册事件回调
@@ -39,7 +44,6 @@ def main():
         .build()
     )
 
-    lark_client = LarkClient(log_level=LogLevel.DEBUG)
     lark_client.register_event_handler(event_handler)
     lark_client.start()
 

@@ -3,6 +3,10 @@ from lark_oapi.core.enum import LogLevel
 from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
 
 
+class LarkApiClient(object):
+    def __init__(self):
+        self.client = lark.Client.builder().app_id(lark.APP_ID).app_secret(lark.APP_SECRET).build()
+
 # 创建 LarkClient 对象，用于请求OpenAPI, 并创建 LarkWSClient 对象，用于使用长连接接收事件。
 # Create LarkClient object for requesting OpenAPI, and create LarkWSClient object for receiving events using long connection.
 class LarkClient(object):
@@ -26,3 +30,6 @@ class LarkClient(object):
         )
 
         client.start()
+
+lark_api_client = LarkApiClient()
+lark_client = LarkClient(log_level=LogLevel.DEBUG)
