@@ -17,9 +17,16 @@ from lark import (
 def start_webhook_server() -> None:
     from webhook.app import run_webhook_server
 
-    thread = threading.Thread(target=run_webhook_server, daemon=True)
+    def _run_webhook_server():
+        try:
+            run_webhook_server()
+        except Exception as e:
+            lark_oapi.logger.exception("Jenkins webhook 服务启动失败")
+            raise
+
+    thread = threading.Thread(target=_run_webhook_server, daemon=True, name="jenkins-webhook-server")
     thread.start()
-    lark_oapi.logger.info("Jenkins webhook 服务已在后台启动")
+    lark_oapi.logger.info("Jenkins webhook 服务在后台启动中...")
 
 
 def main():
