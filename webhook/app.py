@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -5,10 +6,9 @@ from typing import Optional
 from lark import (
     lark_api_client,
     SendAlarmCardPayload,
-    UpdateAlarmCardPayload,
     run_jenkins_agent,
     send_alarm_card,
-    update_alarm_card,
+    handle_agent_result,
 )
 
 import lark_oapi
@@ -118,27 +118,13 @@ async def _notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
         SendAlarmCardPayload(
             receive_id_type=receive_id_type,
             receive_id=NOTIFY_CHAT_ID,
-            content=intro,
+            report_content=intro,
         ),
     )
     card_message_id = create_message_resp.data.message_id
 
-    try:
-        result = await run_jenkins_agent(build_agent_instruction(event))
-        status = True
-    except Exception as e:
-        lark_oapi.logger.exception(f"jenkins_agent 执行失败: {e}")
-        result = f"分析失败: {e}"
-        status = False
-
-    update_alarm_card(
-        lark_api_client.client,
-        UpdateAlarmCardPayload(
-            message_id=card_message_id,
-            content=result,
-            status=status,
-        ),
-    )
+    task = asyncio.create_task(run_jenkins_agent(build_agent_instruction(event)))
+    task.add_done_callback(lambda t: handle_agent_result(lark_api_client.client, card_message_id, receive_id_type, NOTIFY_CHAT_ID, t))
 
 
 def build_agent_instruction(event: JenkinsBuildEvent) -> str:
