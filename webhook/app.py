@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from lark import (
-    lark_client,
     lark_api_client,
     SendAlarmCardPayload,
     UpdateAlarmCardPayload,
@@ -19,63 +18,17 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from webhook.jenkins_parser import (
-    JenkinsBuildEvent,
-    build_agent_instruction,
-)
+class JenkinsBuildEvent(BaseModel):
+    job_name: str
+    build_number: int
+    build_url: str
+    phase: str | None = None
+
 
 load_dotenv()
 
 NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID")
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "8000"))
-
-
-def _resolve_receive_id_type(receive_id: str) -> str:
-    if receive_id.startswith("ou_"):
-        return "open_id"
-    return "chat_id"
-
-
-async def _notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
-    if not NOTIFY_CHAT_ID:
-        lark_oapi.logger.error("NOTIFY_CHAT_ID 未配置，无法发送飞书通知")
-        return
-
-    receive_id_type = _resolve_receive_id_type(NOTIFY_CHAT_ID)
-    intro = (
-        f"收到 Jenkins 构建失败通知\n"
-        f"- Job: {event.job_name}\n"
-        f"- 构建号: #{event.build_number}\n"
-        f"- 状态: 构建失败\n"
-        f"正在分析中..."
-    )
-
-    create_message_resp = send_alarm_card(
-        lark_api_client.client,
-        SendAlarmCardPayload(
-            receive_id_type=receive_id_type,
-            receive_id=NOTIFY_CHAT_ID,
-            content=intro,
-        ),
-    )
-    card_message_id = create_message_resp.data.message_id
-
-    try:
-        result = await run_jenkins_agent(build_agent_instruction(event))
-        status = True
-    except Exception as e:
-        lark_oapi.logger.exception(f"jenkins_agent 执行失败: {e}")
-        result = f"分析失败: {e}"
-        status = False
-
-    update_alarm_card(
-        lark_api_client.client,
-        UpdateAlarmCardPayload(
-            message_id=card_message_id,
-            content=result,
-            status=status,
-        ),
-    )
 
 
 class WebhookPayload(BaseModel):
@@ -138,3 +91,59 @@ def run_webhook_server() -> None:
         port=WEBHOOK_PORT,
         log_level=os.getenv("WEBHOOK_LOG_LEVEL", "info"),
     )
+
+
+def _resolve_receive_id_type(receive_id: str) -> str:
+    if receive_id.startswith("ou_"):
+        return "open_id"
+    return "chat_id"
+
+
+async def _notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
+    if not NOTIFY_CHAT_ID:
+        lark_oapi.logger.error("NOTIFY_CHAT_ID 未配置，无法发送飞书通知")
+        return
+
+    receive_id_type = _resolve_receive_id_type(NOTIFY_CHAT_ID)
+    intro = (
+        f"收到 Jenkins 构建失败通知\n"
+        f"- Job: {event.job_name}\n"
+        f"- 构建号: #{event.build_number}\n"
+        f"- 状态: 构建失败\n"
+        f"正在分析中..."
+    )
+
+    create_message_resp = send_alarm_card(
+        lark_api_client.client,
+        SendAlarmCardPayload(
+            receive_id_type=receive_id_type,
+            receive_id=NOTIFY_CHAT_ID,
+            content=intro,
+        ),
+    )
+    card_message_id = create_message_resp.data.message_id
+
+    try:
+        result = await run_jenkins_agent(build_agent_instruction(event))
+        status = True
+    except Exception as e:
+        lark_oapi.logger.exception(f"jenkins_agent 执行失败: {e}")
+        result = f"分析失败: {e}"
+        status = False
+
+    update_alarm_card(
+        lark_api_client.client,
+        UpdateAlarmCardPayload(
+            message_id=card_message_id,
+            content=result,
+            status=status,
+        ),
+    )
+
+
+def build_agent_instruction(event: JenkinsBuildEvent) -> str:
+    parts = [
+        f"Jenkins Job【{event.job_name}】构建失败，",
+        "请分析最可能导致失败的提交人（committer）。",
+    ]
+    return "".join(parts)
