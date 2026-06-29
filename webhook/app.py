@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from app_logging import setup_logging
 
 class JenkinsBuildEvent(BaseModel):
     job_name: str
@@ -26,6 +27,7 @@ class JenkinsBuildEvent(BaseModel):
 
 
 load_dotenv()
+setup_logging()
 
 NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID")
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "8000"))
