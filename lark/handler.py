@@ -300,42 +300,56 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
 
     return response
 
+def _build_notify_content(metadata: dict) -> str | None:
+    git_email = metadata.get("email")
+    git_name = metadata.get("name")
+    open_id = resolve_open_id(git_email)
+    if open_id:
+        feishu_at_tag = f'<at user_id="{open_id}"></at>'
+    elif git_name:
+        feishu_at_tag = f"@{git_name}"
+    else:
+        return None
+
+    return json.dumps(
+        {
+            "text": (
+                f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"
+            )
+        }
+    )
+
+
 def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_type: str, receive_id: str, task: asyncio.Task) -> None:
+    notify_contents: list[str] = []
     try:
         agent_output = task.result()
-        metadata_match = re.search(r'\$\$METADATA:(.*?)\$\$', agent_output)
+        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
 
-        if metadata_match:
-            # 提取出 JSON 字符串并解析
-            metadata_str = metadata_match.group(1)
-            metadata = json.loads(metadata_str)
+        if metadata_matches:
+            for metadata_str in metadata_matches:
+                try:
+                    metadata = json.loads(metadata_str)
+                except json.JSONDecodeError as e:
+                    lark.logger.warning(
+                        "解析 METADATA 失败: %s, error: %s", metadata_str, e
+                    )
+                    continue
 
-            git_email = metadata.get("email")
-            git_name = metadata.get("name")
-            open_id = resolve_open_id(git_email)
-            if open_id:
-                feishu_at_tag = f'<at user_id="{open_id}"></at>'
-            elif git_name:
-                feishu_at_tag = f'<at user_id="{open_id}"></at>'
-            else:
-                feishu_at_tag = None
+                notify_content = _build_notify_content(metadata)
+                if notify_content:
+                    notify_contents.append(notify_content)
 
-            report_content = re.sub(r'\$\$METADATA:.*?\$\$', '', agent_output).strip()
-            if feishu_at_tag:
-                notify_content = json.dumps({"text": f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"})
-            else:
-                notify_content = None
+            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
         else:
-            lark.logger.warning(f"agent_output 中没有找到元数据标签")
+            lark.logger.warning("agent_output 中没有找到元数据标签")
             report_content = agent_output
-            notify_content = None
 
         status = True
     except Exception as e:
         lark.logger.exception(f"agent执行失败, error: {e}")
-        agent_output = f"分析失败: {e}"
-        notify_content = None
-        report_content = agent_output
+        notify_contents = []
+        report_content = f"分析失败: {e}"
         status = False
 
     update_alarm_card_payload = UpdateAlarmCardPayload(
@@ -345,10 +359,13 @@ def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_ty
     )
     update_alarm_card(client, update_alarm_card_payload)
 
-    if notify_content:
-        send_message(client, SendMessagePayload(
-            receive_id_type=receive_id_type,
-            receive_id=receive_id,
-            msg_type="text",
-            content=notify_content,
-        ))
+    for notify_content in notify_contents:
+        send_message(
+            client,
+            SendMessagePayload(
+                receive_id_type=receive_id_type,
+                receive_id=receive_id,
+                msg_type="text",
+                content=notify_content,
+            ),
+        )
