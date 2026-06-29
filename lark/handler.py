@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any, Literal
 
 import lark_oapi as lark
@@ -19,6 +20,7 @@ from lark_oapi.api.im.v1 import (
 from pydantic import BaseModel, ValidationError
 
 import agent
+from lark.feishu_mapping import resolve_open_id
 
 ALERT_CARD_ID = os.getenv("ALERT_CARD_ID")
 WELCOME_CARD_ID = os.getenv("WELCOME_CARD_ID")
@@ -33,11 +35,11 @@ class SendMessagePayload(BaseModel):
 class SendAlarmCardPayload(BaseModel):
     receive_id_type: Literal["chat_id", "open_id"]
     receive_id: str
-    content: str
+    report_content: str
 
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
-    content: str
+    report_content: str
     status: bool
 
 class SendMessageErrorDetail(BaseModel):
@@ -87,7 +89,7 @@ class P2ImMessageReceiveV1Handler:
             send_alarm_card_payload = SendAlarmCardPayload(
                 receive_id_type=receive_id_type,
                 receive_id=receive_id,
-                content="收到消息，正在分析中...",
+                report_content="收到故障分析任务，正在分析中...",
             )
             create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
             card_message_id = create_message_resp.data.message_id
@@ -97,48 +99,30 @@ class P2ImMessageReceiveV1Handler:
             else:
                 agent_task = asyncio.create_task(agent.run_agent(text_content))
 
-            def _handle_agent_result(task: asyncio.Task) -> None:
-                try:
-                    result = task.result()
-                    status = True
-                except Exception as e:
-                    lark.logger.exception(f"agent执行失败, error: {e}")
-                    result = f"分析失败: {e}"
-                    status = False
-
-                update_alarm_card_payload = UpdateAlarmCardPayload(
-                    message_id=card_message_id,
-                    content=result,
-                    status=status,
-                )
-                update_alarm_card(self.client, update_alarm_card_payload)
-
-            agent_task.add_done_callback(_handle_agent_result)
+            agent_task.add_done_callback(lambda t: handle_agent_result(self.client, card_message_id, receive_id_type, receive_id, t))
         elif data.event.message.message_type == "image":
             try:
                 image_key = json.loads(data.event.message.content)["image_key"]
                 self.download_image(image_key=image_key)
 
             except json.JSONDecodeError, KeyError, TypeError:
-                self.reply_message(
-                    data.event.message.chat_type,
-                    data.event.message.chat_id,
-                    data.event.message.message_id,
-                    json.dumps(
-                        {
-                            "text": "图片消息解析消息失败\nparse image message failed, image key not found"
-                        }
+                send_message(
+                    self.client,
+                    SendMessagePayload(
+                        receive_id_type=data.event.message.chat_type,
+                        receive_id=data.event.message.chat_id,
+                        msg_type="text",
+                        content=json.dumps({"text": "图片消息解析消息失败\nparse image message failed, image key not found"}),
                     ),
                 )
         else:
-            self.reply_message(
-                data.event.message.chat_type,
-                data.event.message.chat_id,
-                data.event.message.message_id,
-                json.dumps(
-                    {
-                        "text": "解析消息失败，请发送文本或图片消息\nparse message failed, please send text or image message"
-                    }
+            send_message(
+                self.client,
+                SendMessagePayload(
+                    receive_id_type=data.event.message.chat_type,
+                    receive_id=data.event.message.chat_id,
+                    msg_type="text",
+                    content=json.dumps({"text": "解析消息失败，请发送文本或图片消息\nparse message failed, please send text or image message"}),
                 ),
             )
 
@@ -258,7 +242,7 @@ def send_alarm_card(client, payload: SendAlarmCardPayload) -> CreateMessageRespo
             "data": {
                 "template_id": ALERT_CARD_ID,
                 "template_variable": {
-                    "content": payload.content,
+                    "report_content": payload.report_content,
                     "status": "分析中",
                     "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
                         "%Y-%m-%d %H:%M:%S (UTC+8)"
@@ -291,7 +275,7 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
             "data": {
                 "template_id": ALERT_CARD_ID,
                 "template_variable": {
-                    "content": payload.content,
+                    "report_content": payload.report_content,
                     "status": "分析完成" if payload.status else "分析失败",
                     "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
                         "%Y-%m-%d %H:%M:%S (UTC+8)"
@@ -315,3 +299,73 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
         )
 
     return response
+
+def _build_notify_content(metadata: dict) -> str | None:
+    git_email = metadata.get("email")
+    git_name = metadata.get("name")
+    open_id = resolve_open_id(git_email)
+    if open_id:
+        feishu_at_tag = f'<at user_id="{open_id}"></at>'
+    elif git_name:
+        feishu_at_tag = f"@{git_name}"
+    else:
+        return None
+
+    return json.dumps(
+        {
+            "text": (
+                f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"
+            )
+        }
+    )
+
+
+def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_type: str, receive_id: str, task: asyncio.Task) -> None:
+    notify_contents: list[str] = []
+    try:
+        agent_output = task.result()
+        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
+
+        if metadata_matches:
+            for metadata_str in metadata_matches:
+                try:
+                    metadata = json.loads(metadata_str)
+                except json.JSONDecodeError as e:
+                    lark.logger.warning(
+                        "解析 METADATA 失败: %s, error: %s", metadata_str, e
+                    )
+                    continue
+
+                notify_content = _build_notify_content(metadata)
+                if notify_content:
+                    notify_contents.append(notify_content)
+
+            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
+        else:
+            lark.logger.warning("agent_output 中没有找到元数据标签")
+            report_content = agent_output
+
+        status = True
+    except Exception as e:
+        lark.logger.exception(f"agent执行失败, error: {e}")
+        notify_contents = []
+        report_content = f"分析失败: {e}"
+        status = False
+
+    update_alarm_card_payload = UpdateAlarmCardPayload(
+        message_id=card_message_id,
+        report_content=report_content,
+        status=status,
+    )
+    update_alarm_card(client, update_alarm_card_payload)
+
+    for notify_content in notify_contents:
+        send_message(
+            client,
+            SendMessagePayload(
+                receive_id_type=receive_id_type,
+                receive_id=receive_id,
+                msg_type="text",
+                content=notify_content,
+            ),
+        )

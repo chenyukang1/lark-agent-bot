@@ -74,8 +74,16 @@ async def run_jenkins_agent(user_instruction: str) -> str:
 def get_latest_failed_build_info(job_name: str) -> str:
     """
     获取指定 Jenkins Job 最新一次失败构建的完整信息。
-    返回最新一次失败构建的完整信息, 包括 Job 名称、构建号、构建 URL、构建结果、构建时长、culprits(Jenkins 认定的相关提交人）、
-    changeSet(Git 提交记录) 摘要、从控制台提取的错误片段、以及截断后的控制台日志尾部。
+    :return job_name: Job 名称
+    :return build_number: 构建号
+    :return build_url: 构建 URL
+    :return build_result: 构建结果
+    :return duration_ms: 构建时长
+    :return culprits: Jenkins 认定的相关提交人
+    :return changeSet_summary: Git 提交记录摘要
+    :return commit_range: Commit 区间
+    :return error_snippets: 从控制台提取的错误片段
+    :return console_log_tail: 截断后的控制台日志尾部
     :param job_name: Job 名称
     """
     server = _get_jenkins_server(job_name)
@@ -91,6 +99,7 @@ def get_latest_failed_build_info(job_name: str) -> str:
 
         culprits = _extract_culprits(build_info)
         changes = _extract_change_set(build_info)
+        commit_range = _extract_commit_range(build_info)
         error_snippets = extract_jenkins_console_errors(console_log)
 
         payload = {
@@ -101,6 +110,7 @@ def get_latest_failed_build_info(job_name: str) -> str:
             "duration_ms": build_info.get("duration", 0),
             "culprits": culprits,
             "change_set_summary": _format_change_set_summary(changes),
+            "commit_range": commit_range,
             "error_snippets": error_snippets,
             "console_log_tail": _truncate_console_log(console_log),
         }
@@ -197,7 +207,7 @@ def get_build_commit_range_by_page(job_name: str, commit_range: str, limit: int 
     如果提交记录过多，大模型应通过调整 skip 参数进行多轮循环调用（翻页），直到找完所有记录。
  
     :param project_path: 项目本地绝对路径。
-    :param commit_range: Commit 区间字符串，格式为 '旧CommitID..新CommitID'。
+    :param commit_range: Commit 区间字符串，格式为 '旧CommitID..新CommitID'，无法获取的情况下传入'HEAD~20..HEAD'。
     :param limit: 每页获取的 Commit 数量，默认 20 条，防止 Token 爆炸。
     :param skip: 跳过的 Commit 数量（偏移量）。第一页传 0，第二页传 20，以此类推。
     """
@@ -406,6 +416,13 @@ def _extract_change_set(build_info: dict) -> list[dict[str, Any]]:
     return changes
 
 
+def _extract_commit_range(build_info: dict) -> str:
+    change_set = build_info.get("changeSet", {})
+    items = change_set.get("items", [])
+    if not items:
+        return "HEAD~20..HEAD"
+    return items[0].get("commitId", "HEAD~20") + ".." + items[-1].get("commitId", "HEAD")
+
 def _truncate_console_log(console_log: str) -> str:
     if len(console_log) <= MAX_CONSOLE_LOG_CHARS:
         return console_log
@@ -609,7 +626,8 @@ new_prompt = """
 
 第二步：常规战（无精准行号时使用）：查区间，缩小“嫌疑圈”
 ---------------------------------------
-1. 知道了受害文件后，你必须调用 `get_build_commit_range_by_page` 工具，传入 Jenkins 提供的 Commit 区间（形如 A..B）。
+1. 如果本次没有找到受害文件，则返回“本次构建没有查询到commit信息，请检查是否运维人员手动终止“，并仍然给出诊断报告
+2. 知道了受害文件后，你必须调用 `get_build_commit_range_by_page` 工具，传入 Jenkins 提供的 Commit 区间（形如 A..B）。
 2. 在工具返回的 Commit 清单中，开启“特征比对模式”：哪一个 Commit 涉及的修改文件列表里，恰好包含了你在第一步里找到的【报错文件路径】？那么这个 Commit 的作者就是头号嫌疑人！
 3. ⚠️【超长日志翻页铁律】：如果本次构建涉及的 Commit 实在太多，且当前页工具提示 `是否还有下一页: 【是】`，只要你还没在当前页找到动过【报错文件】的 Commit，你就必须修改 `skip` 参数进行多轮循环（Loop）调用，直到翻页找到为止。一旦在某一页找到了动过该文件的 Commit，立即停止翻页，见好就收！
 
@@ -636,8 +654,10 @@ new_prompt = """
 > [用1-2大白话解释：XX同学在本次提交中修改了 XXX 文件，将原本的 XXX 删除了/改写成了 XXX。但是，这导致了 [结合第一步报错说明具体原因]，从而导致 Jenkins 编译/打包被阻断。]
 
 ### 🛠️ 建议修复方案
-1. **修复建议**：[给出具体的修改建议。如果是代码问题，请在此处提供一个明晰的修改后示例代码块]
-2. **验证命令**：[告诉他应该执行什么本地命令重新测试，如 npm run build 或 mvn clean package]
+- **修复建议**：[给出具体的修改建议。如果是代码问题，请在此处提供一个明晰的修改后示例代码块]
+
+当你分析出最终根因并准备结束回答时，你必须在回答的最末尾另起一行，严格按照以下格式输出元数据标签（以便后台系统识别并转化飞书强提醒，严禁漏写，如果有多个嫌疑人，则输出多行元数据标签）：
+$$METADATA:{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人Git名字"}$$
 """
 
 

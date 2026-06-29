@@ -13,7 +13,6 @@
 
 ## 效果展示
 
-![运行截图](docs/image.png)
 ![jenkins构建失败](docs/jenkins-lark.jpeg)
 
 ## 许可
