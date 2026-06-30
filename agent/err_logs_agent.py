@@ -18,7 +18,7 @@ if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST or not LOCAL_JAVA_LOG_FILE_PA
 if not os.path.exists(LOCAL_JAVA_LOG_FILE_PATH):
     raise ValueError(f"文件 {LOCAL_JAVA_LOG_FILE_PATH} 不存在!")
 
-async def run_agent(user_instruction: str):
+async def run_err_logs_agent(user_instruction: str):
     result = await agent.ainvoke(
         {
             "messages": [
@@ -150,5 +150,5 @@ agent = create_agent(
 if __name__ == "__main__":
     import asyncio
 
-    result = asyncio.run(run_agent("当前java服务有什么问题？"))
+    result = asyncio.run(run_err_logs_agent("当前java服务有什么问题？"))
     print(result)
