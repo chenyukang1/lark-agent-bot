@@ -1,3 +1,12 @@
+from typing import Sequence
+
+
+from langchain_core.messages.utils import MessageLikeRepresentation
+
+
+from langchain_core.messages.base import BaseMessage
+
+
 import asyncio
 import os
 import time
@@ -12,6 +21,9 @@ load_dotenv()
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 DASHSCOPE_API_HOST = os.getenv("DASHSCOPE_API_HOST")
+
+if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST:
+    raise ValueError("DASHSCOPE_API_KEY, DASHSCOPE_API_HOST 未配置!")
 
 async def run_qa_agent(user_instruction: str, thread_id: str):
     result = await agent.ainvoke(
@@ -52,7 +64,7 @@ system_prompt = """
 你的语气应该既专业严谨，又耐心友好。多使用“建议您...”、“通常的做法是...”等引导性词汇。
 """
 
-message_trimer = trim_messages(
+message_trimer = trim_messages[Sequence[MessageLikeRepresentation], list[BaseMessage]](
     max_tokens=4000,
     strategy="last",
     token_counter=llm,
@@ -63,6 +75,7 @@ message_trimer = trim_messages(
 agent = create_agent(
     model=llm,
     system_prompt=system_prompt,
+    message_trimer=message_trimer,
     checkpointer=InMemorySaver(),
 )
 
