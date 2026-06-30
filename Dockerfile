@@ -2,6 +2,8 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
+RUN groupadd --system app && useradd --system --gid app --create-home app
+
 # jenkins_agent 会调用 git log / blame / pull
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
@@ -24,7 +26,10 @@ RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN mkdir -p /app/logs
+RUN mkdir -p /app/logs \
+    && chown -R app:app /app
+
+USER app
 
 EXPOSE 8000
 
