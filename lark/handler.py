@@ -97,7 +97,8 @@ class P2ImMessageReceiveV1Handler:
             if "构建" in text_content:
                 agent_task = asyncio.create_task(run_jenkins_agent(text_content))
             else:
-                agent_task = asyncio.create_task(agent.run_agent(text_content))
+                thread_id = f"{chat_id}_{open_id}"
+                agent_task = asyncio.create_task(run_qa_agent(text_content, thread_id))
 
             agent_task.add_done_callback(lambda t: handle_agent_result(self.client, card_message_id, receive_id_type, receive_id, t))
         elif data.event.message.message_type == "image":
@@ -146,6 +147,15 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
         open_id = data.event.operator_id.open_id
 
         return send_welcome_card(self.client, open_id)
+
+
+async def run_qa_agent(*args, **kwargs) -> str:
+    from agent.qa_agent import run_qa_agent as _run_qa_agent
+    return await _run_qa_agent(*args, **kwargs)
+
+async def run_err_logs_agent(*args, **kwargs) -> str:
+    from agent.err_logs_agent import run_err_logs_agent as _run_err_logs_agent
+    return await _run_err_logs_agent(*args, **kwargs)
 
 
 async def run_jenkins_agent(*args, **kwargs) -> str:
