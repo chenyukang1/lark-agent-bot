@@ -64,7 +64,7 @@ system_prompt = """
 你的语气应该既专业严谨，又耐心友好。多使用“建议您...”、“通常的做法是...”等引导性词汇。
 """
 
-message_trimer = trim_messages[Sequence[MessageLikeRepresentation], list[BaseMessage]](
+message_trimer = trim_messages(
     max_tokens=4000,
     strategy="last",
     token_counter=llm,
@@ -72,10 +72,11 @@ message_trimer = trim_messages[Sequence[MessageLikeRepresentation], list[BaseMes
     start_on="human",
 )
 
+truncated_llm = message_trimer | llm
+
 agent = create_agent(
     model=llm,
     system_prompt=system_prompt,
-    message_trimer=message_trimer,
     checkpointer=InMemorySaver(),
 )
 
