@@ -20,6 +20,7 @@ from lark_oapi.api.im.v1 import (
 from pydantic import BaseModel, ValidationError
 
 import agent
+from agent.intent import route_intent
 from lark.feishu_mapping import resolve_open_id
 
 ALERT_CARD_ID = os.getenv("ALERT_CARD_ID")
@@ -94,9 +95,22 @@ class P2ImMessageReceiveV1Handler:
             create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
             card_message_id = create_message_resp.data.message_id
 
-            if "构建" in text_content:
+            intent = route_intent(text_content)
+            if intent == "build_error":
+                update_alarm_card_payload = UpdateAlarmCardPayload(
+                    message_id=card_message_id,
+                    report_content="正在作为【构建故障分析专家】分析故障原因，请稍后...",
+                    status=False,
+                )
+                update_alarm_card(self.client, update_alarm_card_payload)
                 agent_task = asyncio.create_task(run_jenkins_agent(text_content))
             else:
+                update_alarm_card_payload = UpdateAlarmCardPayload(
+                    message_id=card_message_id,
+                    report_content="正在作为【日常运维助手】回答问题，请稍后...",
+                    status=False,
+                )
+                update_alarm_card(self.client, update_alarm_card_payload)
                 thread_id = f"{chat_id}_{open_id}"
                 agent_task = asyncio.create_task(run_qa_agent(text_content, thread_id))
 
