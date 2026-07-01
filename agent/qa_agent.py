@@ -1,3 +1,12 @@
+from typing import Sequence
+
+
+from langchain_core.messages.utils import MessageLikeRepresentation
+
+
+from langchain_core.messages.base import BaseMessage
+
+
 import asyncio
 import os
 import time
@@ -12,6 +21,9 @@ load_dotenv()
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 DASHSCOPE_API_HOST = os.getenv("DASHSCOPE_API_HOST")
+
+if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST:
+    raise ValueError("DASHSCOPE_API_KEY, DASHSCOPE_API_HOST 未配置!")
 
 async def run_qa_agent(user_instruction: str, thread_id: str):
     result = await agent.ainvoke(
@@ -59,6 +71,8 @@ message_trimer = trim_messages(
     include_system=True,
     start_on="human",
 )
+
+truncated_llm = message_trimer | llm
 
 agent = create_agent(
     model=llm,
