@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from .log import log_handler
+from utils.log import log_handler
 
 load_dotenv()
 
