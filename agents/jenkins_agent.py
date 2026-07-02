@@ -10,26 +10,14 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
+from devops import CODEBASE_CONFIGS
+from devops.codebase_config import CodebaseConfig
 from utils.log import log_handler
 
 load_dotenv()
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 DASHSCOPE_API_HOST = os.getenv("DASHSCOPE_API_HOST")
-
-TEST_JENKINS_URL = os.getenv("TEST_JENKINS_URL")
-TEST_JENKINS_USER = os.getenv("TEST_JENKINS_USER")
-TEST_JENKINS_TOKEN = os.getenv("TEST_JENKINS_TOKEN")
-
-STAGING_JENKINS_URL = os.getenv("STAGING_JENKINS_URL")
-STAGING_JENKINS_USER = os.getenv("STAGING_JENKINS_USER")
-STAGING_JENKINS_TOKEN = os.getenv("STAGING_JENKINS_TOKEN")
-
-TEST_JAVA_PROJECT_PATH = os.getenv("TEST_JAVA_PROJECT_PATH")
-STAGING_JAVA_PROJECT_PATH = os.getenv("STAGING_JAVA_PROJECT_PATH")
-
-TEST_JAVA_JOB_NAME = os.getenv("TEST_JAVA_JOB_NAME", "test_java")
-STAGING_JAVA_JOB_NAME = os.getenv("STAGING_JAVA_JOB_NAME", "staging-interlace-assets")
 
 MAX_CONSOLE_LOG_CHARS = 12000
 MAX_ERROR_SNIPPETS = 20
@@ -40,17 +28,8 @@ _synced_repos: set[str] = set[str]()
 if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST:
     raise ValueError("DASHSCOPE_API_KEY, DASHSCOPE_API_HOST 未配置!")
 
-if not TEST_JENKINS_URL or not TEST_JENKINS_USER or not TEST_JENKINS_TOKEN:
-    raise ValueError("TEST_JENKINS_URL, TEST_JENKINS_USER, TEST_JENKINS_TOKEN 未配置!")
-
-if not STAGING_JENKINS_URL or not STAGING_JENKINS_USER or not STAGING_JENKINS_TOKEN:
-    raise ValueError("STAGING_JENKINS_URL, STAGING_JENKINS_USER, STAGING_JENKINS_TOKEN 未配置!")
-
-if not TEST_JAVA_PROJECT_PATH:
-    raise ValueError("TEST_JAVA_PROJECT_PATH 未配置!")
-
-if not STAGING_JAVA_PROJECT_PATH:
-    raise ValueError("STAGING_JAVA_PROJECT_PATH 未配置!")
+if not CODEBASE_CONFIGS:
+    raise ValueError("CODEBASE_CONFIGS 未配置，请检查 codebase_configs.json")
 
 async def run_jenkins_agent(user_instruction: str) -> str:
     _synced_repos.clear()
@@ -360,21 +339,25 @@ def blame_file_at_line(file_path: str, line_number: int, job_name: str) -> str:
         return f"git blame 异常: {e}"
 
 
+def _get_codebase_config(job_name: str) -> CodebaseConfig:
+    config = CODEBASE_CONFIGS.get(job_name)
+    if config is None:
+        supported = ", ".join(CODEBASE_CONFIGS)
+        raise ValueError(f"不支持的 Job 名称: {job_name}，支持: {supported}")
+    return config
+
+
 def _get_jenkins_server(job_name: str) -> jenkins.Jenkins:
-    if job_name == TEST_JAVA_JOB_NAME:
-        return jenkins.Jenkins(TEST_JENKINS_URL, username=TEST_JENKINS_USER, password=TEST_JENKINS_TOKEN)
-    elif job_name == STAGING_JAVA_JOB_NAME:
-        return jenkins.Jenkins(STAGING_JENKINS_URL, username=STAGING_JENKINS_USER, password=STAGING_JENKINS_TOKEN)
-    else:
-        raise ValueError(f"不支持的 Job 名称: {job_name}")
+    config = _get_codebase_config(job_name)
+    return jenkins.Jenkins(
+        config.jenkins_url,
+        username=config.jenkins_user,
+        password=config.jenkins_token,
+    )
 
 
-def _resolve_project_path(job_name: str) -> str | None:
-    if job_name == TEST_JAVA_JOB_NAME:
-        return TEST_JAVA_PROJECT_PATH
-    elif job_name == STAGING_JAVA_JOB_NAME:
-        return STAGING_JAVA_PROJECT_PATH
-    raise ValueError(f"不支持的 Job 名称: {job_name}")
+def _resolve_project_path(job_name: str) -> str:
+    return _get_codebase_config(job_name).project_path
 
 
 def _resolve_failed_build(server: jenkins.Jenkins, job_name: str) -> tuple[int, str] | None:

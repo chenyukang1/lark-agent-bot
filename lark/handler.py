@@ -19,7 +19,6 @@ from lark_oapi.api.im.v1 import (
 )
 from pydantic import BaseModel, ValidationError
 
-import agent
 from agent.intent import route_intent
 from lark.feishu_mapping import resolve_open_id
 
