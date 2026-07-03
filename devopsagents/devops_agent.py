@@ -116,7 +116,6 @@ def get_latest_failed_build_info(jenkins_job_name: str) -> str:
 
 
 ANALYSIS_PROMPT = """
-你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，结合代码和git提交记录，定位最可能导致失败的提交人（committer）。
 本次涉及到的信息如下：
 jenkins job 名称为 {jenkins_job_name},
 jenkins 构建号为 {build_number},
@@ -144,7 +143,7 @@ git提交范围为 {commit_range},
 ### 🛠️ 建议修复方案
 - **修复建议**：[给出具体的修改建议。如果是代码问题，请在此处提供一个明晰的修改后示例代码块]
 
-当你分析出最终根因并准备结束回答时，你必须在回答的最末尾另起一行，严格按照以下格式输出元数据标签（以便后台系统识别并转化飞书强提醒，严禁漏写，如果有多个嫌疑人，则输出多行元数据标签）：
+当你分析出最终根因并准备结束回答时，你必须在回答的最末尾另起一行，严格按照以下格式输出元数据标签（以便后台系统识别并转化飞书强提醒，严禁漏写）：
 $$METADATA:{{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人Git名字"}}$$
 """
 
@@ -168,7 +167,8 @@ async def codebase_analysis(payload: str) -> str:
         build_url=payload["build_url"],
         duration_ms=payload["duration_ms"],
         commit_range=payload["commit_range"],
-        error_snippets=payload["error_snippets"],
+        build_errors=payload["build_errors"],
+        server_errors=payload["server_errors"],
     )
 
     return await claude_code_agent.run(payload["project_path"], prompt)
@@ -178,9 +178,8 @@ def _extract_commit_range(build_info: dict) -> str:
     change_set = build_info.get("changeSet", {})
     items = change_set.get("items", [])
     if not items:
-        return "HEAD~20..HEAD"
     return (
-        items[0].get("commitId", "HEAD~20") + ".." + items[-1].get("commitId", "HEAD")
+        items[0].get("commitId") + ".." + items[-1].get("commitId")
     )
 
 
@@ -195,7 +194,6 @@ def _extract_jenkins_build_errors(console_log: str, max_lines: int = 60) -> str:
         r"APPLICATION FAILED TO START",
         r"BUILD FAILURE",
         r"Compilation failure",
-        r"ERROR",
     ]
 
     error_index = -1
@@ -261,5 +259,3 @@ def _pull_latest_changes(project_path: str) -> str | None:
 
 
 if __name__ == "__main__":
-    payload = get_latest_failed_build_info("test_java")
-    print(payload)

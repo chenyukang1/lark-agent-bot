@@ -40,7 +40,7 @@ class SendAlarmCardPayload(BaseModel):
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
     report_content: str
-    status: bool
+    status: Literal["pending", "success", "failed"] = "pending"
 
 class SendMessageErrorDetail(BaseModel):
     code: Any = None
@@ -265,6 +265,12 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
         lark.logger.exception(f"update_alarm_card 参数校验失败, error: {e}")
         raise
 
+    status_text = {
+        "pending": "分析中",
+        "success": "分析完成",
+        "failed": "分析失败",
+    }
+
     content = json.dumps(
         {
             "type": "template",
@@ -272,7 +278,7 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
                 "template_id": ALERT_CARD_ID,
                 "template_variable": {
                     "report_content": payload.report_content,
-                    "status": "分析完成" if payload.status else "分析失败",
+                    "status": status_text[payload.status],
                     "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
                         "%Y-%m-%d %H:%M:%S (UTC+8)"
                     ),
@@ -317,7 +323,7 @@ def _build_notify_content(metadata: dict) -> str | None:
 
 
 def card_update_callback(client: lark.Client, card_message_id: str, content: str):
-    return update_alarm_card(client, UpdateAlarmCardPayload(message_id=card_message_id, report_content=content, status=False))
+    return update_alarm_card(client, UpdateAlarmCardPayload(message_id=card_message_id, report_content=content))
 
 
 def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_type: str, receive_id: str, task: asyncio.Task) -> None:
@@ -345,12 +351,12 @@ def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_ty
             lark.logger.warning("agent_output 中没有找到元数据标签")
             report_content = agent_output
 
-        status = True
+        status = "success"
     except Exception as e:
         lark.logger.exception(f"agent执行失败, error: {e}")
         notify_contents = []
         report_content = f"分析失败: {e}"
-        status = False
+        status = "failed"
 
     update_alarm_card_payload = UpdateAlarmCardPayload(
         message_id=card_message_id,
