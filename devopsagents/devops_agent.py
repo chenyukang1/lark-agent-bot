@@ -178,6 +178,7 @@ def _extract_commit_range(build_info: dict) -> str:
     change_set = build_info.get("changeSet", {})
     items = change_set.get("items", [])
     if not items:
+        return ""
     return (
         items[0].get("commitId") + ".." + items[-1].get("commitId")
     )
