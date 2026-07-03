@@ -15,6 +15,7 @@ class CodebaseConfig(BaseModel):
     jenkins_user: str = Field(description="Jenkins Username")
     jenkins_token: str = Field(description="Jenkins Token")
     project_path: str = Field(description="本地 Git 项目路径")
+    semantics_hit_rule: str = Field(description="语义命中规则，用于判断用户输入是否命中该配置")
 
 
 def _config_path() -> Path:
@@ -49,3 +50,10 @@ DEFAULT_CONFIG = dict(
         "dashscope_api_host": os.getenv("DASHSCOPE_API_HOST"),
     }
 )
+
+def get_semantics_hit_rule_prompt() -> str:
+    prompt = ""
+    for codebase_config in DEFAULT_CONFIG["codebase_configs"].values():
+        prompt += f"如果用户输入 {codebase_config.semantics_hit_rule}，则输出 {codebase_config.jenkins_job_name}\n"
+    prompt += "如果用户输入不命中任何语义命中规则，则输出 None"
+    return prompt

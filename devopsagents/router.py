@@ -3,7 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from devopsagents.config import DEFAULT_CONFIG
+from devopsagents.config import DEFAULT_CONFIG, get_semantics_hit_rule_prompt
 
 
 SYSTEM_PROMPT_TEMPLATE = """
@@ -12,8 +12,8 @@ intent为以下之一:
 general_qa: 用户单纯请教运维知识、闲聊; 
 troubleshoot: 用户要求排查具体的构建错误、查报错
 
-jenkins_job_name为以下之一:
-{jenkins_job_name_list}
+jenkins_job_name返回规则如下：
+{semantics_hit_rule_prompt}
 
 请以 JSON 格式输出
 """
@@ -42,10 +42,9 @@ class DevopsRouter:
         self.structured_llm = llm.with_structured_output(DevopsRouterDecision)
 
     def route(self, user_input: str) -> DevopsRouterDecision:
-        jenkins_job_name_list = DEFAULT_CONFIG["codebase_configs"].keys()
         template = ChatPromptTemplate.from_messages(
             [
-                ("system", SYSTEM_PROMPT_TEMPLATE.format(jenkins_job_name_list=jenkins_job_name_list)),
+                ("system", SYSTEM_PROMPT_TEMPLATE.format(semantics_hit_rule_prompt=get_semantics_hit_rule_prompt())),
                 ("human", "{user_input}"),
             ]
         )
@@ -54,6 +53,5 @@ class DevopsRouter:
 
 if __name__ == "__main__":
     router = DevopsRouter()
-    # decision = router.route("今天java 测试环境 Jenkins 打包一直报 maven 插件找不到，怎么搞？")
-    decision = router.route("hi")
+    decision = router.route("admin 构建失败了")
     print(decision)
