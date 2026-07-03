@@ -56,3 +56,4 @@ fi
 # 启动项目 / Start the project
 echo "启动项目... / Starting the project..."
 
+uv run main.py

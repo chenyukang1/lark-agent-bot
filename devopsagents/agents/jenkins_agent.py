@@ -10,9 +10,8 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from devops import CODEBASE_CONFIGS
-from devops.codebase_config import CodebaseConfig
-from utils.log import log_handler
+from devopsagents.config import DEFAULT_CONFIG
+from devopsagents.debug import log_handler
 
 load_dotenv()
 
@@ -25,11 +24,6 @@ GIT_PULL_TIMEOUT = 60
 
 _synced_repos: set[str] = set[str]()
 
-if not DASHSCOPE_API_KEY or not DASHSCOPE_API_HOST:
-    raise ValueError("DASHSCOPE_API_KEY, DASHSCOPE_API_HOST 未配置!")
-
-if not CODEBASE_CONFIGS:
-    raise ValueError("CODEBASE_CONFIGS 未配置，请检查 codebase_configs.json")
 
 async def run_jenkins_agent(user_instruction: str) -> str:
     _synced_repos.clear()
@@ -58,11 +52,8 @@ def get_latest_failed_build_info(job_name: str) -> str:
     :return build_url: 构建 URL
     :return build_result: 构建结果
     :return duration_ms: 构建时长
-    :return culprits: Jenkins 认定的相关提交人
-    :return changeSet_summary: Git 提交记录摘要
     :return commit_range: Commit 区间
     :return error_snippets: 从控制台提取的错误片段
-    :return console_log_tail: 截断后的控制台日志尾部
     :param job_name: Job 名称
     """
     server = _get_jenkins_server(job_name)
@@ -339,16 +330,9 @@ def blame_file_at_line(file_path: str, line_number: int, job_name: str) -> str:
         return f"git blame 异常: {e}"
 
 
-def _get_codebase_config(job_name: str) -> CodebaseConfig:
-    config = CODEBASE_CONFIGS.get(job_name)
-    if config is None:
-        supported = ", ".join(CODEBASE_CONFIGS)
-        raise ValueError(f"不支持的 Job 名称: {job_name}，支持: {supported}")
-    return config
-
 
 def _get_jenkins_server(job_name: str) -> jenkins.Jenkins:
-    config = _get_codebase_config(job_name)
+    config = DEFAULT_CONFIG["codebase_configs"][job_name]
     return jenkins.Jenkins(
         config.jenkins_url,
         username=config.jenkins_user,
@@ -357,7 +341,7 @@ def _get_jenkins_server(job_name: str) -> jenkins.Jenkins:
 
 
 def _resolve_project_path(job_name: str) -> str:
-    return _get_codebase_config(job_name).project_path
+    return DEFAULT_CONFIG["codebase_configs"][job_name].project_path
 
 
 def _resolve_failed_build(server: jenkins.Jenkins, job_name: str) -> tuple[int, str] | None:
@@ -430,7 +414,7 @@ def extract_jenkins_console_errors(console_log: str, context_lines: int = 2) -> 
         re.compile(r"Tests run:.*Failures: [1-9]\d*", re.IGNORECASE),
         re.compile(r".*\.java:\d+:\d+:\s+error:", re.IGNORECASE),
         re.compile(r"Caused by:.*", re.IGNORECASE),
-        re.compile(r"Exception in thread", re.IGNORECASE),
+        re.compile(r"Exception:.*", re.IGNORECASE),
     ]
 
     lines = console_log.splitlines()

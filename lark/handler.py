@@ -19,7 +19,7 @@ from lark_oapi.api.im.v1 import (
 )
 from pydantic import BaseModel, ValidationError
 
-from agent.intent import route_intent
+from devopsagents import DevopsAgent
 from lark.feishu_mapping import resolve_open_id
 
 ALERT_CARD_ID = os.getenv("ALERT_CARD_ID")
@@ -60,6 +60,7 @@ class SendMessageError(Exception):
 class P2ImMessageReceiveV1Handler:
     def __init__(self, client: lark.Client) -> None:
         self.client = client
+        self.devops_agent = DevopsAgent()
 
     def handle(self, data: P2ImMessageReceiveV1) -> None:
         if data.event.message.message_type == "text":
@@ -94,24 +95,9 @@ class P2ImMessageReceiveV1Handler:
             create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
             card_message_id = create_message_resp.data.message_id
 
-            intent = route_intent(text_content)
-            if intent == "build_error":
-                update_alarm_card_payload = UpdateAlarmCardPayload(
-                    message_id=card_message_id,
-                    report_content="正在作为【构建故障分析专家】分析故障原因，请稍后...",
-                    status=False,
-                )
-                update_alarm_card(self.client, update_alarm_card_payload)
-                agent_task = asyncio.create_task(run_jenkins_agent(text_content))
-            else:
-                update_alarm_card_payload = UpdateAlarmCardPayload(
-                    message_id=card_message_id,
-                    report_content="正在作为【日常运维助手】回答问题，请稍后...",
-                    status=False,
-                )
-                update_alarm_card(self.client, update_alarm_card_payload)
-                thread_id = f"{chat_id}_{open_id}"
-                agent_task = asyncio.create_task(run_qa_agent(text_content, thread_id))
+            def card_callback(content):
+                return card_update_callback(self.client, card_message_id, content)
+            agent_task = asyncio.create_task(self.devops_agent.handle_user_query(chat_id, open_id, text_content, card_callback))
 
             agent_task.add_done_callback(lambda t: handle_agent_result(self.client, card_message_id, receive_id_type, receive_id, t))
         elif data.event.message.message_type == "image":
@@ -161,19 +147,6 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 
         return send_welcome_card(self.client, open_id)
 
-
-async def run_qa_agent(*args, **kwargs) -> str:
-    from agent.qa_agent import run_qa_agent as _run_qa_agent
-    return await _run_qa_agent(*args, **kwargs)
-
-async def run_err_logs_agent(*args, **kwargs) -> str:
-    from agent.err_logs_agent import run_err_logs_agent as _run_err_logs_agent
-    return await _run_err_logs_agent(*args, **kwargs)
-
-
-async def run_jenkins_agent(*args, **kwargs) -> str:
-    from agent.jenkins_agent import run_jenkins_agent as _run_jenkins_agent
-    return await _run_jenkins_agent(*args, **kwargs)
 
 # 发送消息
 # # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
@@ -341,6 +314,10 @@ def _build_notify_content(metadata: dict) -> str | None:
             )
         }
     )
+
+
+def card_update_callback(client: lark.Client, card_message_id: str, content: str):
+    return update_alarm_card(client, UpdateAlarmCardPayload(message_id=card_message_id, report_content=content, status=False))
 
 
 def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_type: str, receive_id: str, task: asyncio.Task) -> None:
