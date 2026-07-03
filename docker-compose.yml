@@ -10,3 +10,4 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./feishu_mapping.json:/app/feishu_mapping.json
+      - ./codebase_configs.json:/app/codebase_configs.json

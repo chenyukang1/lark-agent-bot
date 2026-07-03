@@ -29,6 +29,30 @@ else
     echo "未找到 pyproject.toml 文件，跳过依赖安装。/ No pyproject.toml file found, skipping dependency installation."
 fi
 
+config_not_set=false
+if [ ! -f ".env" ]; then
+    cp .env.example .env
+    echo ".env 文件已创建，请编辑 .env 文件并配置相关环境变量。/ .env file has been created, please edit the .env file and configure the related environment variables."
+    config_not_set=true
+fi
+
+if [ ! -f "feishu_mapping.json" ]; then
+    cp feishu_mapping.json.example feishu_mapping.json
+    echo "feishu_mapping.json 文件已创建，请编辑 feishu_mapping.json 文件并配置相关环境变量。/ feishu_mapping.json file has been created, please edit the feishu_mapping.json file and configure the related environment variables."
+    config_not_set=true
+fi
+
+if [ ! -f "codebase_configs.json" ]; then
+    cp codebase_configs.example.json codebase_configs.json
+    echo "codebase_configs.json 文件已创建，请编辑 codebase_configs.json 文件并配置相关环境变量。/ codebase_configs.json file has been created, please edit the codebase_configs.json file and configure the related environment variables."
+    config_not_set=true
+fi
+
+if [ "$config_not_set" = true ]; then
+    echo "请配置相关环境变量后重试。/ Please configure the related environment variables and try again."
+    exit 1
+fi
+
 # 启动项目 / Start the project
 echo "启动项目... / Starting the project..."
 

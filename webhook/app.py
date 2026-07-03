@@ -3,10 +3,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from devopsagents import DevopsAgent
 from lark import (
     lark_api_client,
     SendAlarmCardPayload,
-    run_jenkins_agent,
     send_alarm_card,
     handle_agent_result,
 )
@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app_logging import setup_logging
+from lark.handler import card_update_callback
 
 class JenkinsBuildEvent(BaseModel):
     job_name: str
@@ -27,7 +27,6 @@ class JenkinsBuildEvent(BaseModel):
 
 
 load_dotenv()
-setup_logging()
 
 NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID")
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "8000"))
@@ -125,7 +124,10 @@ async def _notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
     )
     card_message_id = create_message_resp.data.message_id
 
-    task = asyncio.create_task(run_jenkins_agent(build_agent_instruction(event)))
+    def card_callback(content):
+        return card_update_callback(lark_api_client.client, card_message_id, content)
+
+    task = asyncio.create_task(devops_agent.handle_user_query(NOTIFY_CHAT_ID, NOTIFY_CHAT_ID, build_agent_instruction(event), card_callback))
     task.add_done_callback(lambda t: handle_agent_result(lark_api_client.client, card_message_id, receive_id_type, NOTIFY_CHAT_ID, t))
 
 
@@ -135,3 +137,5 @@ def build_agent_instruction(event: JenkinsBuildEvent) -> str:
         "请分析最可能导致失败的提交人（committer）。",
     ]
     return "".join(parts)
+
+devops_agent = DevopsAgent()

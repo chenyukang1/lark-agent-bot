@@ -6,4 +6,5 @@ __pycache__
 logs
 .vscode
 feishu_mapping.json
+codebase_configs.json
 docker-compose.yml

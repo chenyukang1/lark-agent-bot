@@ -1,22 +1,17 @@
-import threading
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from app_logging import setup_logging
-
-setup_logging()
-
-import lark_oapi
-
-from lark import (
+import threading  # noqa: E402
+import lark_oapi  # noqa: E402
+from lark import (  # noqa: E402
     lark_api_client,
     lark_client,
     P2ImChatAccessEventBotP2PChatEnteredV1Handler,
     P2ImMessageReceiveV1Handler,
 )
 
+from utils.app_logging import setup_logging  # noqa: E402
 
 def start_webhook_server() -> None:
     from webhook.app import run_webhook_server
@@ -24,16 +19,20 @@ def start_webhook_server() -> None:
     def _run_webhook_server():
         try:
             run_webhook_server()
-        except Exception as e:
+        except Exception:
             lark_oapi.logger.exception("Jenkins webhook 服务启动失败")
             raise
 
-    thread = threading.Thread(target=_run_webhook_server, daemon=True, name="jenkins-webhook-server")
+    thread = threading.Thread(
+        target=_run_webhook_server, daemon=True, name="jenkins-webhook-server"
+    )
     thread.start()
     lark_oapi.logger.info("Jenkins webhook 服务在后台启动中...")
 
 
 def main():
+    setup_logging()
+
     start_webhook_server()
 
     # Create API client for sending messages
