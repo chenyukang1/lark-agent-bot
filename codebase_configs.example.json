@@ -1,6 +1,7 @@
 [
   {
     "jenkins_job_name": "jenkins_job_name_1",
+    "semantics_hit_rule": "semantics_hit_rule_1",
     "jenkins_url": "jenkins_url_1",
     "jenkins_user": "your_jenkins_user",
     "jenkins_token": "your_jenkins_token",
@@ -8,6 +9,7 @@
   },
   {
     "jenkins_job_name": "jenkins_job_name_2",
+    "semantics_hit_rule": "semantics_hit_rule_2",
     "jenkins_url": "jenkins_url_2",
     "jenkins_user": "your_jenkins_user",
     "jenkins_token": "your_jenkins_token",
