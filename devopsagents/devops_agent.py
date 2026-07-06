@@ -5,8 +5,8 @@ import json
 from langchain_openai import ChatOpenAI
 import lark_oapi as lark
 
-from devopsagents.agents.claude_code_agent import ClaudeCoodeAgent
 from devopsagents.config import DEFAULT_CONFIG, CodebaseConfig
+from devopsagents.agents import SubAgentFactory
 from devopsagents.router import DevopsRouter
 from devopsagents.agents.qa_agent import run_qa_agent
 
@@ -30,7 +30,7 @@ class DevopsAgent:
         card_callback("正在作为【日常运维助手】回答问题，请稍候...")
         return await run_qa_agent(user_input, thread_id)
 
-    async def troubleshoot(self, user_input: str, jenkins_job_name: str, card_callback):
+    async def troubleshoot(self, jenkins_job_name: str, card_callback):
         card_callback("正在作为【构建故障分析专家】分析故障原因，请稍候...")
         payload = get_latest_failed_build_info(jenkins_job_name)
         return await codebase_analysis(payload)
@@ -46,7 +46,7 @@ class DevopsAgent:
             if not decision.jenkins_job_name:
                 return "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。"
             return await self.troubleshoot(
-                user_input, decision.jenkins_job_name, card_callback
+                decision.jenkins_job_name, card_callback
             )
         else:
             return "抱歉，我无法处理您的请求。"
@@ -147,9 +147,6 @@ git提交范围为 {commit_range},
 $$METADATA:{{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人Git名字"}}$$
 """
 
-claude_code_agent = ClaudeCoodeAgent()
-
-
 async def codebase_analysis(payload: str) -> str:
     """
     分析指定 Jenkins Job 的代码库。
@@ -171,7 +168,7 @@ async def codebase_analysis(payload: str) -> str:
         server_errors=payload["server_errors"],
     )
 
-    return await claude_code_agent.run(payload["project_path"], prompt)
+    return await SubAgentFactory.get_sub_agent().run(payload["project_path"], prompt)
 
 
 def _extract_commit_range(build_info: dict) -> str:
@@ -260,3 +257,14 @@ def _pull_latest_changes(project_path: str) -> str | None:
 
 
 if __name__ == "__main__":
+    code_base_config: CodebaseConfig = DEFAULT_CONFIG["codebase_configs"][
+        "test_java"
+    ]
+    server = jenkins.Jenkins(
+        code_base_config.jenkins_url,
+        username=code_base_config.jenkins_user,
+        password=code_base_config.jenkins_token,
+    )
+    build_info = server.get_build_info("test_java", 12924)
+    commit_range = _extract_commit_range(build_info)
+    print(f"commit_range: {commit_range}")
