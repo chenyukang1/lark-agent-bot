@@ -141,10 +141,15 @@ class P2ImMessageReceiveV1Handler:
 class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
     def __init__(self, client: lark.Client) -> None:
         self.client = client
+        self.welcomed = set[str]()
 
     def handle(self, data: P2ImChatAccessEventBotP2pChatEnteredV1):
         open_id = data.event.operator_id.open_id
+        if open_id in self.welcomed:
+            return
 
+        lark.logger.info(f"欢迎用户 {open_id}")
+        self.welcomed.add(open_id)
         return send_welcome_card(self.client, open_id)
 
 
