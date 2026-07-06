@@ -1,4 +1,4 @@
-from cursor_sdk import Agent, LocalAgentOptions
+from cursor_sdk import AsyncAgent, LocalAgentOptions
 
 from devopsagents.agents.base import BaseSubAgent
 
@@ -11,9 +11,10 @@ SYSTEM_PROMPT = """
 
 class CursorAgent(BaseSubAgent):
     async def run(self, work_dir: str, prompt: str) -> str:
-        with Agent.create(
+        async with AsyncAgent.create(
             model="composer-2.5",
             local=LocalAgentOptions(cwd=work_dir),
         ) as agent:
-            result = agent.send(message=f"{SYSTEM_PROMPT}\n\n{prompt}").text()
+            run = agent.send(message=f"{SYSTEM_PROMPT}\n\n{prompt}")
+            result = await run.text()
             return result
