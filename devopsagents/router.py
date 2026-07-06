@@ -8,14 +8,14 @@ from devopsagents.config import DEFAULT_CONFIG, get_semantics_hit_rule_prompt
 
 SYSTEM_PROMPT_TEMPLATE = """
 你是一个意图识别模型，请分析用户的输入，并将其归类为以下明确的意图之一。请以 JSON 格式输出
+
 intent为以下之一:
 general_qa: 用户单纯请教运维知识、闲聊; 
 troubleshoot: 用户要求排查具体的构建错误、查报错
 
-jenkins_job_name返回规则如下：
+alias严格按以下规则返回:
 {semantics_hit_rule_prompt}
 
-请以 JSON 格式输出
 """
 
 
@@ -25,9 +25,9 @@ class DevopsRouterDecision(BaseModel):
     intent: Literal["general_qa", "troubleshoot"] = Field(
         description="用户单纯请教运维知识、闲聊选择 'general_qa'；用户要求排查具体的构建错误、查报错选择 'troubleshoot'"
     )
-    jenkins_job_name: str | None = Field(
+    alias: str | None = Field(
         default=None,
-        description="如果用户的意图是排查构建失败, 请从中提取具体的jenkins任务名称",
+        description="如果用户的意图是排查构建失败, 请从中提取具体的别名",
     )
 
 
@@ -53,5 +53,5 @@ class DevopsRouter:
 
 if __name__ == "__main__":
     router = DevopsRouter()
-    decision = router.route("admin 构建失败了")
+    decision = router.route("admin staging 构建失败了")
     print(decision)

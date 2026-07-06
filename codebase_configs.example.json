@@ -1,5 +1,6 @@
 [
   {
+    "alias": "alias_1",
     "jenkins_job_name": "jenkins_job_name_1",
     "semantics_hit_rule": "semantics_hit_rule_1",
     "jenkins_url": "jenkins_url_1",
@@ -8,6 +9,7 @@
     "project_path": "project_path_1"
   },
   {
+    "alias": "alias_2",
     "jenkins_job_name": "jenkins_job_name_2",
     "semantics_hit_rule": "semantics_hit_rule_2",
     "jenkins_url": "jenkins_url_2",
