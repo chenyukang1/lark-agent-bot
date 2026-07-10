@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 
 import lark_oapi as lark
+from lark_oapi.api.contact.v3 import FindByDepartmentUserRequest, FindByDepartmentUserResponse
+
+from devopsagents.config import DEFAULT_CONFIG
 
 _DEFAULT_PATH = Path(__file__).resolve().parent.parent / "feishu_mapping.json"
 _mapping: dict[str, str] | None = None
@@ -14,6 +17,32 @@ def _mapping_path() -> Path:
         return Path(custom)
     return _DEFAULT_PATH
 
+
+def _find_users_by_department(client: lark.Client, department_id: str) -> dict[str, str]:
+    page_token = None
+    users: dict[str, str] = {}
+    while True:
+        request: FindByDepartmentUserRequest = (
+            FindByDepartmentUserRequest.builder()
+            .user_id_type("open_id")
+            .department_id_type("open_department_id")
+            .department_id(department_id)
+            .page_size(10)
+            .build()
+        )
+        if page_token:
+            request.page_token = page_token
+
+        response: FindByDepartmentUserResponse = client.contact.v3.user.find_by_department(
+            request
+        )
+        if response.data.has_more:
+            page_token = response.data.page_token
+        else:
+            break
+        users.update({item.nickname.lower() if item.nickname else item.name.lower(): item.open_id for item in response.data.items})
+
+    return users
 
 def load_feishu_mapping() -> dict[str, str]:
     global _mapping
@@ -39,12 +68,23 @@ def load_feishu_mapping() -> dict[str, str]:
     return _mapping
 
 
-def resolve_open_id(email: str | None) -> str:
-    if not email:
+def resolve_open_id(client: lark.Client, name: str | None, email: str | None) -> str:
+    if not name and not email:
         return ""
 
     if _mapping is None:
         load_feishu_mapping()
 
     assert _mapping is not None
-    return _mapping.get(email.lower(), "")
+
+    open_id = _mapping.get(email.lower(), "") if email else ""
+
+    if open_id:
+        return open_id
+
+    notify_department_id = DEFAULT_CONFIG["notify_department_id"]
+    if not notify_department_id or not name:
+        return ""
+
+    users = _find_users_by_department(client, notify_department_id)
+    return users.get(name.lower(), "")

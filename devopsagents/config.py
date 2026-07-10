@@ -49,6 +49,7 @@ DEFAULT_CONFIG = dict(
         "codebase_configs": load_codebase_configs(),
         "dashscope_api_key": os.getenv("DASHSCOPE_API_KEY"),
         "dashscope_api_host": os.getenv("DASHSCOPE_API_HOST"),
+        "notify_department_id": os.getenv("NOTIFY_DEPARTMENT_ID"),
         "sub_agent": os.getenv("SUB_AGENT"),
     }
 )
