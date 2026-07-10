@@ -1,19 +1,33 @@
 # Lark Agent Bot
 
-## 简介
+Assist development and operations personnel in identifying and troubleshooting CI/CD and code build issues.
 
-这是一个基于飞书（Lark）OpenAPI 的机器人项目，集成了本地 Agent/LLM 诊断能力。它能够：
+## Background
 
-- 监听飞书消息事件
-- 向用户发送“分析中”卡片
-- 异步调用本地 Agent 进行故障诊断
-- 将分析结果更新回飞书卡片
+As business operations expand, code repositories grow in size, and the complexity of code builds increases. Development and operations staff must spend a significant amount of time diagnosing and resolving code build issues.
 
-该项目使用 `lark-oapi` 作为飞书 SDK，并通过 `langchain` / `langchain-openai` 调用本地分析 Agent。
+lark-agent-bot provides an efficient way to troubleshoot CI/CD issues.
 
-## 效果展示
+## Get-started
 
-![jenkins构建失败](docs/jenkins-lark.jpeg)
+### Prerequisites
+
+- Python 3.10+
+- Lark Bot App ID [Quickly develop a bot](https://github.com/larksuite/lark-samples.git)
+- Lark Bot App Secret [Quickly develop a bot](https://github.com/larksuite/lark-samples.git)
+- Lark Card ID [Card Kit](https://open.feishu.cn/cardkit?from=open_docs_header)
+
+### Run bootstrap script
+
+```bash
+./bootstrap.sh
+```
+
+## Talk to the bot
+
+Troubleshoot CI/CD issues through natural language conversations with a Lark bot.
+
+![jenkins-failure](docs/jenkins-lark.jpeg)
 
 ## 许可
 

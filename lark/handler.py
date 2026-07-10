@@ -307,10 +307,10 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
 
     return response
 
-def _build_notify_content(metadata: dict) -> str | None:
+def _build_notify_content(client: lark.Client, metadata: dict) -> str | None:
     git_email = metadata.get("email")
     git_name = metadata.get("name")
-    open_id = resolve_open_id(git_email)
+    open_id = resolve_open_id(client, git_name, git_email)
     if open_id:
         feishu_at_tag = f'<at user_id="{open_id}"></at>'
     elif git_name:
@@ -347,7 +347,7 @@ def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_ty
                     )
                     continue
 
-                notify_content = _build_notify_content(metadata)
+                notify_content = _build_notify_content(client, metadata)
                 if notify_content:
                     notify_contents.append(notify_content)
 
