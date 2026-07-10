@@ -3,7 +3,10 @@ import os
 from pathlib import Path
 
 import lark_oapi as lark
-from lark_oapi.api.contact.v3 import FindByDepartmentUserRequest, FindByDepartmentUserResponse
+from lark_oapi.api.contact.v3 import (
+    FindByDepartmentUserRequest,
+    FindByDepartmentUserResponse,
+)
 
 from devopsagents.config import DEFAULT_CONFIG
 
@@ -18,9 +21,11 @@ def _mapping_path() -> Path:
     return _DEFAULT_PATH
 
 
-def _find_users_by_department(client: lark.Client, department_id: str) -> dict[str, str]:
-    page_token = None
+def _find_users_by_department(
+    client: lark.Client, department_id: str
+) -> dict[str, str]:
     users: dict[str, str] = {}
+    page_token = None
     while True:
         request: FindByDepartmentUserRequest = (
             FindByDepartmentUserRequest.builder()
@@ -33,16 +38,30 @@ def _find_users_by_department(client: lark.Client, department_id: str) -> dict[s
         if page_token:
             request.page_token = page_token
 
-        response: FindByDepartmentUserResponse = client.contact.v3.user.find_by_department(
-            request
+        try:
+            response: FindByDepartmentUserResponse = (
+                client.contact.v3.user.find_by_department(request)
+            )
+        except Exception as e:
+            lark.logger.error("获取飞书用户信息失败: %s", e)
+            break
+
+        users.update(
+            {
+                item.nickname.lower()
+                if item.nickname
+                else item.name.lower(): item.open_id
+                for item in response.data.items
+            }
         )
+
         if response.data.has_more:
             page_token = response.data.page_token
         else:
             break
-        users.update({item.nickname.lower() if item.nickname else item.name.lower(): item.open_id for item in response.data.items})
 
     return users
+
 
 def load_feishu_mapping() -> dict[str, str]:
     global _mapping
