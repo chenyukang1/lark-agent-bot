@@ -46,6 +46,10 @@ def _find_users_by_department(
             lark.logger.error("获取飞书用户信息失败: %s", e)
             break
 
+        if not response.data:
+            lark.logger.error("获取飞书用户信息失败: %d %s", response.code, response.msg)
+            break
+
         users.update(
             {
                 item.nickname.lower()
