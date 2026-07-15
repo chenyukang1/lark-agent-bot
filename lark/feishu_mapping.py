@@ -27,16 +27,17 @@ def _find_users_by_department(
     users: dict[str, str] = {}
     page_token = None
     while True:
-        request: FindByDepartmentUserRequest = (
+        builder = (
             FindByDepartmentUserRequest.builder()
             .user_id_type("open_id")
             .department_id_type("open_department_id")
             .department_id(department_id)
             .page_size(10)
-            .build()
         )
         if page_token:
-            request.page_token = page_token
+            builder.page_token(page_token)
+ 
+        request = builder.build()
 
         try:
             response: FindByDepartmentUserResponse = (
@@ -46,15 +47,18 @@ def _find_users_by_department(
             lark.logger.error("获取飞书用户信息失败: %s", e)
             break
 
-        users.update(
-            {
-                item.nickname.lower()
-                if item.nickname
-                else item.name.lower(): item.open_id
-                for item in response.data.items
-            }
-        )
+        if not response.success():
+            lark.logger.error("获取飞书用户信息失败: %d %s", response.code, response.msg)
+            break
 
+        for item in response.data.items:
+            if item.nickname:
+                users.update(
+                    {
+                        item.nickname.lower(): item.open_id
+                    }
+                )
+ 
         if response.data.has_more:
             page_token = response.data.page_token
         else:
