@@ -62,17 +62,17 @@ class ClaudeCoodeAgent(BaseSubAgent):
         async def prompt_with_image():
             yield {
                 "type": "user",
-                "message": {
+                "messages": {
                     "role": "user",
                     "content": [
-                        { "text": prompt },
                         {
-                            "image": f'data:image/png;base64,{image_base64}',
+                            "text": prompt
+                        },
+                        {
+                            "image": f"data:image/png;base64,{image_base64}",
                         },
                     ],
                 },
-                "parent_tool_use_id": None,
-                "session_id": "debug-session",
             }
 
         # Agentic loop: streams messages as Claude works
