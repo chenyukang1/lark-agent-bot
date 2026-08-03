@@ -101,20 +101,62 @@ class P2ImMessageReceiveV1Handler:
 
             agent_task.add_done_callback(lambda t: handle_agent_result(self.client, card_message_id, receive_id_type, receive_id, t))
         elif data.event.message.message_type == "image":
+            chat_type = data.event.message.chat_type
+            chat_id = data.event.message.chat_id
+            open_id = data.event.sender.sender_id.open_id
+
+            receive_id_type = "chat_id" if chat_type == "group" else "open_id"
+            receive_id = chat_id if chat_type == "group" else open_id
+
             try:
                 image_key = json.loads(data.event.message.content)["image_key"]
-                self.download_image(image_key=image_key)
-
-            except json.JSONDecodeError, KeyError, TypeError:
+                image_bytes = self.download_image(image_key=image_key)
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                lark.logger.error(f"图片消息解析失败, error: {e}")
                 send_message(
                     self.client,
                     SendMessagePayload(
-                        receive_id_type=data.event.message.chat_type,
-                        receive_id=data.event.message.chat_id,
+                        receive_id_type=receive_id_type,
+                        receive_id=receive_id,
                         msg_type="text",
-                        content=json.dumps({"text": "图片消息解析消息失败\nparse image message failed, image key not found"}),
+                        content=json.dumps({"text": "图片消息解析失败\nparse image message failed, image key not found"}),
                     ),
                 )
+                return
+            except Exception as e:
+                lark.logger.exception(f"图片下载失败, error: {e}")
+                send_message(
+                    self.client,
+                    SendMessagePayload(
+                        receive_id_type=receive_id_type,
+                        receive_id=receive_id,
+                        msg_type="text",
+                        content=json.dumps({"text": f"图片下载失败: {e}"}),
+                    ),
+                )
+                return
+
+            send_alarm_card_payload = SendAlarmCardPayload(
+                receive_id_type=receive_id_type,
+                receive_id=receive_id,
+                report_content="收到图片故障分析任务，正在识别图片内容...",
+            )
+            create_message_resp = send_alarm_card(self.client, send_alarm_card_payload)
+            card_message_id = create_message_resp.data.message_id
+
+            def card_callback(content):
+                return card_update_callback(self.client, card_message_id, content)
+
+            agent_task = asyncio.create_task(
+                self.devops_agent.handle_image_query(
+                    chat_id, open_id, image_bytes, card_callback
+                )
+            )
+            agent_task.add_done_callback(
+                lambda t: handle_agent_result(
+                    self.client, card_message_id, receive_id_type, receive_id, t
+                )
+            )
         else:
             send_message(
                 self.client,
