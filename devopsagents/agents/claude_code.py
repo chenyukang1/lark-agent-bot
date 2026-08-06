@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import os
 from claude_agent_sdk import (
     ThinkingBlock,
@@ -50,3 +52,52 @@ class ClaudeCoodeAgent(BaseSubAgent):
                         lark.logger.debug(f"Claude tool being called: {block.name}")
             elif isinstance(message, ResultMessage):
                 lark.logger.debug(f"Done: {message.subtype}")  # Final result
+
+    async def run_with_image(self, work_dir: str, prompt: str, image_base64: str) -> str:
+
+        options = ClaudeAgentOptions(
+            model="qwen-vl-max",
+        )
+
+        async def prompt_with_image():
+            yield {
+                "type": "user",
+                "messages": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": prompt
+                        },
+                        {
+                            "image": f"data:image/png;base64,{image_base64}",
+                        },
+                    ],
+                },
+            }
+
+        # Agentic loop: streams messages as Claude works
+        async for message in query(
+            prompt=prompt_with_image(),
+            options=options,
+        ):
+            print(message)
+            if hasattr(message, "result") and message.result:
+                print(f"Claude result: {message.result}")
+                return message.result
+
+            # Print human-readable output
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, ThinkingBlock):
+                        print(f"Claude reasoning: {block.thinking}")
+                    elif isinstance(block, ToolUseBlock):
+                        print(f"Claude tool being called: {block.name}")
+            elif isinstance(message, ResultMessage):
+                print(f"Done: {message.subtype}")  # Final result
+
+if __name__ == "__main__":
+    with open("/Users/chenyk/Downloads/screenshot-20260625-191841.png", "rb") as f:
+        image_data = base64.b64encode(f.read()).decode("utf-8")
+    agent = ClaudeCoodeAgent()
+    result = asyncio.run(agent.run_with_image(work_dir=".", prompt="What is the picture?", image_base64=image_data))
+    print(result)
