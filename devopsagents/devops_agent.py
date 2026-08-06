@@ -259,7 +259,7 @@ def _run_git_command(project_path: str, args: list[str], timeout: int = 15):
         return
 
     lark.logger.debug(
-        f"git 命令执行成功: {project_path}, output={result.stdout.strip()}"
+        f"git 命令执行成功: {project_path}, args={args}, output={result.stdout.strip()}"
     )
 
 
