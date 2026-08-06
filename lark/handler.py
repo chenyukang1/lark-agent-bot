@@ -1,8 +1,8 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timedelta, timezone
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import lark_oapi as lark
@@ -32,15 +32,18 @@ class SendMessagePayload(BaseModel):
     msg_type: str
     content: str
 
+
 class SendAlarmCardPayload(BaseModel):
     receive_id_type: Literal["chat_id", "open_id"]
     receive_id: str
     report_content: str
 
+
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
     report_content: str
     status: Literal["pending", "success", "failed"] = "pending"
+
 
 class SendMessageErrorDetail(BaseModel):
     code: Any = None
@@ -97,9 +100,18 @@ class P2ImMessageReceiveV1Handler:
 
             def card_callback(content):
                 return card_update_callback(self.client, card_message_id, content)
-            agent_task = asyncio.create_task(self.devops_agent.handle_user_query(chat_id, open_id, text_content, card_callback))
 
-            agent_task.add_done_callback(lambda t: handle_agent_result(self.client, card_message_id, receive_id_type, receive_id, t))
+            agent_task = asyncio.create_task(
+                self.devops_agent.handle_user_query(
+                    chat_id, open_id, text_content, card_callback
+                )
+            )
+
+            agent_task.add_done_callback(
+                lambda t: handle_agent_result(
+                    self.client, card_message_id, receive_id_type, receive_id, t
+                )
+            )
         elif data.event.message.message_type == "image":
             chat_type = data.event.message.chat_type
             chat_id = data.event.message.chat_id
@@ -119,7 +131,11 @@ class P2ImMessageReceiveV1Handler:
                         receive_id_type=receive_id_type,
                         receive_id=receive_id,
                         msg_type="text",
-                        content=json.dumps({"text": "图片消息解析失败\nparse image message failed, image key not found"}),
+                        content=json.dumps(
+                            {
+                                "text": "图片消息解析失败\nparse image message failed, image key not found"
+                            }
+                        ),
                     ),
                 )
                 return
@@ -164,7 +180,11 @@ class P2ImMessageReceiveV1Handler:
                     receive_id_type=data.event.message.chat_type,
                     receive_id=data.event.message.chat_id,
                     msg_type="text",
-                    content=json.dumps({"text": "解析消息失败，请发送文本或图片消息\nparse message failed, please send text or image message"}),
+                    content=json.dumps(
+                        {
+                            "text": "解析消息失败，请发送文本或图片消息\nparse message failed, please send text or image message"
+                        }
+                    ),
                 ),
             )
 
@@ -197,9 +217,7 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 
 # 发送消息
 # # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
-def send_message(
-    client, payload: SendMessagePayload
-) -> CreateMessageResponse:
+def send_message(client, payload: SendMessagePayload) -> CreateMessageResponse:
     try:
         payload = SendMessagePayload.model_validate(payload)
     except ValidationError as e:
@@ -264,7 +282,10 @@ def send_welcome_card(client, open_id):
     return send_message(
         client,
         SendMessagePayload(
-            receive_id_type="open_id", receive_id=open_id, msg_type="interactive", content=content
+            receive_id_type="open_id",
+            receive_id=open_id,
+            msg_type="interactive",
+            content=content,
         ),
     )
 
@@ -349,6 +370,7 @@ def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageRe
 
     return response
 
+
 def _build_notify_content(client: lark.Client, metadata: dict) -> str | None:
     git_email = metadata.get("email")
     git_name = metadata.get("name")
@@ -370,10 +392,19 @@ def _build_notify_content(client: lark.Client, metadata: dict) -> str | None:
 
 
 def card_update_callback(client: lark.Client, card_message_id: str, content: str):
-    return update_alarm_card(client, UpdateAlarmCardPayload(message_id=card_message_id, report_content=content))
+    return update_alarm_card(
+        client,
+        UpdateAlarmCardPayload(message_id=card_message_id, report_content=content),
+    )
 
 
-def handle_agent_result(client: lark.Client, card_message_id: str, receive_id_type: str, receive_id: str, task: asyncio.Task) -> None:
+def handle_agent_result(
+    client: lark.Client,
+    card_message_id: str,
+    receive_id_type: str,
+    receive_id: str,
+    task: asyncio.Task,
+) -> None:
     notify_contents: list[str] = []
     try:
         agent_output = task.result()

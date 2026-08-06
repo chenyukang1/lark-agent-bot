@@ -1,20 +1,20 @@
+import json
 import re
 import subprocess
+
 import jenkins
-import json
-from langchain_openai import ChatOpenAI
 import lark_oapi as lark
+from langchain_openai import ChatOpenAI
 
-from devopsagents.config import DEFAULT_CONFIG, CodebaseConfig
 from devopsagents.agents import SubAgentFactory
-from devopsagents.router import DevopsRouter
 from devopsagents.agents.qa_agent import run_qa_agent
+from devopsagents.config import DEFAULT_CONFIG, CodebaseConfig
 from devopsagents.image_analyzer import analyze_image_content
-
+from devopsagents.router import DevopsRouter
 
 MAX_CONSOLE_LOG_CHARS = 12000
 MAX_ERROR_SNIPPETS = 20
-GIT_PULL_TIMEOUT = 60
+GIT_CMD_TIMEOUT = 60
 
 
 class DevopsAgent:
@@ -45,8 +45,7 @@ class DevopsAgent:
             return "未能从图片中识别出有效内容，请发送更清晰的截图或改用文字描述故障。"
 
         card_callback(
-            "图片识别完成，正在分析故障...\n\n"
-            f"**识别内容：**\n{extracted_text}"
+            f"图片识别完成，正在分析故障...\n\n**识别内容：**\n{extracted_text}"
         )
         return await self.handle_user_query(
             chat_id, open_id, extracted_text, card_callback
@@ -62,9 +61,7 @@ class DevopsAgent:
         elif decision.intent == "troubleshoot":
             if not decision.alias:
                 return "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。"
-            return await self.troubleshoot(
-                decision.alias, card_callback
-            )
+            return await self.troubleshoot(decision.alias, card_callback)
         else:
             return "抱歉，我无法处理您的请求。"
 
@@ -78,12 +75,11 @@ def get_latest_failed_build_info(alias: str) -> str:
     :return duration_ms: 构建时长
     :return commit_range: Commit 区间
     :return error_snippets: 从控制台提取的错误片段
+    :return git_branch: Git 分支名称
     :param jenkins_job_name: Jenkins Job 名称
     """
 
-    code_base_config: CodebaseConfig = DEFAULT_CONFIG["codebase_configs"][
-        alias
-    ]
+    code_base_config: CodebaseConfig = DEFAULT_CONFIG["codebase_configs"][alias]
     server = jenkins.Jenkins(
         code_base_config.jenkins_url,
         username=code_base_config.jenkins_user,
@@ -100,7 +96,9 @@ def get_latest_failed_build_info(alias: str) -> str:
             last_failed_build["number"],
             last_failed_build["url"],
         )
-        build_info = server.get_build_info(code_base_config.jenkins_job_name, failed_build_number)
+        build_info = server.get_build_info(
+            code_base_config.jenkins_job_name, failed_build_number
+        )
         console_log = server.get_build_console_output(
             code_base_config.jenkins_job_name, failed_build_number
         )
@@ -118,6 +116,7 @@ def get_latest_failed_build_info(alias: str) -> str:
             "build_errors": build_errors,
             "server_errors": server_errors,
             "project_path": code_base_config.project_path,
+            "git_branch": code_base_config.git_branch,
         }
 
         lark.logger.debug(
@@ -160,6 +159,7 @@ git提交范围为 {commit_range},
 $$METADATA:{{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人Git名字"}}$$
 """
 
+
 async def codebase_analysis(payload: str) -> str:
     """
     分析指定 Jenkins Job 的代码库。
@@ -169,7 +169,7 @@ async def codebase_analysis(payload: str) -> str:
 
     lark.logger.debug(f"codebase_analysis payload: {payload}")
 
-    _pull_latest_changes(payload["project_path"])
+    _pull_latest_changes(payload["project_path"], payload["git_branch"])
 
     prompt = ANALYSIS_PROMPT.format(
         jenkins_job_name=payload["jenkins_job_name"],
@@ -189,9 +189,7 @@ def _extract_commit_range(build_info: dict) -> str:
     items = change_set.get("items", [])
     if not items:
         return ""
-    return (
-        items[0].get("commitId") + ".." + items[-1].get("commitId")
-    )
+    return items[0].get("commitId") + ".." + items[-1].get("commitId")
 
 
 def _extract_jenkins_build_errors(console_log: str, max_lines: int = 60) -> str:
@@ -245,10 +243,8 @@ def _extract_server_startup_errors(console_log: str) -> str:
         return ""
 
 
-def _run_git_command(
-    project_path: str, args: list[str], timeout: int = 15
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+def _run_git_command(project_path: str, args: list[str], timeout: int = 15):
+    result = subprocess.run(
         ["git", *args],
         cwd=project_path,
         capture_output=True,
@@ -256,23 +252,31 @@ def _run_git_command(
         timeout=timeout,
         check=False,
     )
-
-
-def _pull_latest_changes(project_path: str) -> str | None:
-    result = _run_git_command(project_path, ["pull"], timeout=GIT_PULL_TIMEOUT)
     if result.returncode != 0:
-        lark.logger.error(f"git pull 失败: {project_path}, error={result.stderr}")
-        detail = (result.stderr or result.stdout or "").strip()
-        return detail or "git pull 失败"
+        lark.logger.error(
+            f"git 命令执行失败: project_path={project_path}, args={args}, error={result.stderr}"
+        )
+        return
 
-    lark.logger.debug(f"git pull 成功: {project_path}, output={result.stdout.strip()}")
+    lark.logger.debug(
+        f"git 命令执行成功: {project_path}, args={args}, output={result.stdout.strip()}"
+    )
+
+
+def _pull_latest_changes(project_path: str, git_branch: str) -> str | None:
+    _run_git_command(project_path, ["fetch", "origin"], timeout=GIT_CMD_TIMEOUT)
+
+    _run_git_command(
+        project_path,
+        ["switch", "-C", git_branch, f"origin/{git_branch}"],
+        timeout=GIT_CMD_TIMEOUT,
+    )
+
     return None
 
 
 if __name__ == "__main__":
-    code_base_config: CodebaseConfig = DEFAULT_CONFIG["codebase_configs"][
-        "test_java"
-    ]
+    code_base_config: CodebaseConfig = DEFAULT_CONFIG["codebase_configs"]["test_java"]
     server = jenkins.Jenkins(
         code_base_config.jenkins_url,
         username=code_base_config.jenkins_user,

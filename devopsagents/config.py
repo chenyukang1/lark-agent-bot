@@ -1,8 +1,9 @@
 import json
 import os
 from pathlib import Path
-from pydantic import BaseModel, Field, TypeAdapter
+
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field, TypeAdapter
 
 load_dotenv()
 
@@ -16,7 +17,10 @@ class CodebaseConfig(BaseModel):
     jenkins_user: str = Field(description="Jenkins Username")
     jenkins_token: str = Field(description="Jenkins Token")
     project_path: str = Field(description="本地 Git 项目路径")
-    semantics_hit_rule: str = Field(description="语义命中规则，用于判断用户输入是否命中该配置")
+    git_branch: str = Field(description="Git 分支名称")
+    semantics_hit_rule: str = Field(
+        description="语义命中规则，用于判断用户输入是否命中该配置"
+    )
 
 
 def _config_path() -> Path:
@@ -33,7 +37,7 @@ def load_codebase_configs() -> dict[str, CodebaseConfig]:
         data = json.load(file)
 
     if not isinstance(data, list):
-        raise ValueError(f"Codebase 配置文件格式错误，根节点必须是数组: {path}")
+        raise TypeError(f"Codebase 配置文件格式错误，根节点必须是数组: {path}")
 
     configs = TypeAdapter(list[CodebaseConfig]).validate_python(data)
     result = {config.alias: config for config in configs}
@@ -44,15 +48,14 @@ def load_codebase_configs() -> dict[str, CodebaseConfig]:
     return result
 
 
-DEFAULT_CONFIG = dict(
-    {
-        "codebase_configs": load_codebase_configs(),
-        "dashscope_api_key": os.getenv("DASHSCOPE_API_KEY"),
-        "dashscope_api_host": os.getenv("DASHSCOPE_API_HOST"),
-        "notify_department_id": os.getenv("NOTIFY_DEPARTMENT_ID"),
-        "sub_agent": os.getenv("SUB_AGENT"),
-    }
-)
+DEFAULT_CONFIG = {
+    "codebase_configs": load_codebase_configs(),
+    "dashscope_api_key": os.getenv("DASHSCOPE_API_KEY"),
+    "dashscope_api_host": os.getenv("DASHSCOPE_API_HOST"),
+    "notify_department_id": os.getenv("NOTIFY_DEPARTMENT_ID"),
+    "sub_agent": os.getenv("SUB_AGENT"),
+}
+
 
 def get_semantics_hit_rule_prompt() -> str:
     prompt = ""
