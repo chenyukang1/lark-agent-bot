@@ -6,7 +6,8 @@
     "jenkins_url": "jenkins_url_1",
     "jenkins_user": "your_jenkins_user",
     "jenkins_token": "your_jenkins_token",
-    "project_path": "project_path_1"
+    "project_path": "project_path_1",
+    "git_branch": "git_branch_1"
   },
   {
     "alias": "alias_2",
@@ -15,6 +16,7 @@
     "jenkins_url": "jenkins_url_2",
     "jenkins_user": "your_jenkins_user",
     "jenkins_token": "your_jenkins_token",
-    "project_path": "project_path_2"
+    "project_path": "project_path_2",
+    "git_branch": "git_branch_2"
   }
 ]
