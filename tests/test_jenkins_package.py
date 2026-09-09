@@ -36,6 +36,10 @@ class JenkinsPackageTest(unittest.TestCase):
         )
         server.build_job.assert_called_once_with("staging-build")
         self.assertIn("队列 ID：42", result)
+        self.assertIn(
+            "Jenkins 地址：[查看任务](https://jenkins.example.com/job/staging-build/)",
+            result,
+        )
 
     @patch.object(devops_agent, "jenkins")
     def test_returns_error_without_triggering_unknown_alias(

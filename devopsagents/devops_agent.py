@@ -158,9 +158,14 @@ def trigger_jenkins_build(alias: str) -> str:
         lark.logger.info(
             f"Jenkins 打包已触发: job={code_base_config.jenkins_job_name}, queue_id={queue_id}"
         )
+        job_url = (
+            f"{code_base_config.jenkins_url.rstrip('/')}/job/"
+            f"{code_base_config.jenkins_job_name}/"
+        )
         return (
             f"已触发 Jenkins 打包任务【{code_base_config.jenkins_job_name}】。"
-            f"队列 ID：{queue_id}"
+            f"队列 ID：{queue_id}\n"
+            f"[查看任务]({job_url})"
         )
     except Exception as e:
         lark.logger.exception(
