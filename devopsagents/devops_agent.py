@@ -36,6 +36,10 @@ class DevopsAgent:
         payload = get_latest_failed_build_info(alias)
         return await codebase_analysis(payload)
 
+    async def package(self, alias: str, card_callback):
+        card_callback("正在获取 Jenkins 配置并执行打包，请稍候...")
+        return trigger_jenkins_build(alias)
+
     async def handle_image_query(
         self, chat_id: str, open_id: str, image_bytes: bytes, card_callback
     ) -> str:
@@ -62,6 +66,10 @@ class DevopsAgent:
             if not decision.alias:
                 return "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。"
             return await self.troubleshoot(decision.alias, card_callback)
+        elif decision.intent == "package":
+            if not decision.alias:
+                return "如果您的意图是执行打包，请重新提问并给出具体的任务名称。"
+            return await self.package(decision.alias, card_callback)
         else:
             return "抱歉，我无法处理您的请求。"
 
@@ -129,6 +137,41 @@ def get_latest_failed_build_info(alias: str) -> str:
             f"获取 Jenkins 信息失败: job={code_base_config.jenkins_job_name}, error={e}"
         )
         return f"获取 Jenkins 信息失败: {e}"
+
+
+def trigger_jenkins_build(alias: str) -> str:
+    """使用指定别名的 Jenkins 配置触发一次构建。"""
+    code_base_config: CodebaseConfig | None = DEFAULT_CONFIG["codebase_configs"].get(
+        alias
+    )
+    if not code_base_config:
+        return f"未找到别名【{alias}】对应的 Jenkins 配置。"
+
+    server = jenkins.Jenkins(
+        code_base_config.jenkins_url,
+        username=code_base_config.jenkins_user,
+        password=code_base_config.jenkins_token,
+    )
+
+    try:
+        queue_id = server.build_job(code_base_config.jenkins_job_name)
+        lark.logger.info(
+            f"Jenkins 打包已触发: job={code_base_config.jenkins_job_name}, queue_id={queue_id}"
+        )
+        job_url = (
+            f"{code_base_config.jenkins_url.rstrip('/')}/job/"
+            f"{code_base_config.jenkins_job_name}/"
+        )
+        return (
+            f"已触发 Jenkins 打包任务【{code_base_config.jenkins_job_name}】。"
+            f"队列 ID：{queue_id}\n"
+            f"[查看任务]({job_url})"
+        )
+    except Exception as e:
+        lark.logger.exception(
+            f"触发 Jenkins 打包失败: job={code_base_config.jenkins_job_name}, error={e}"
+        )
+        return f"触发 Jenkins 打包失败: {e}"
 
 
 ANALYSIS_PROMPT = """
