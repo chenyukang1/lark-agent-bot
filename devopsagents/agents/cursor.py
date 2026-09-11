@@ -1,7 +1,8 @@
-from cursor_sdk import AsyncAgent, LocalAgentOptions
+import os
+
+from cursor_sdk import AsyncAgent, Client, LocalAgentOptions
 
 from devopsagents.agents.base import BaseSubAgent
-
 
 SYSTEM_PROMPT = """
 你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，定位最可能导致失败的提交人（committer）。
@@ -11,9 +12,11 @@ SYSTEM_PROMPT = """
 
 class CursorAgent(BaseSubAgent):
     async def run(self, work_dir: str, prompt: str) -> str:
+        base_url = os.getenv("CURSOR_BASE_URL")
+        auth_token = os.getenv("CURSOR_AUTH_TOKEN")
+        client = Client(base_url=base_url, auth_token=auth_token)
         async with AsyncAgent.create(
-            model="composer-2.5",
-            local=LocalAgentOptions(cwd=work_dir),
+            model="composer-2.5", local=LocalAgentOptions(cwd=work_dir), client=client
         ) as agent:
             run = agent.send(message=f"{SYSTEM_PROMPT}\n\n{prompt}")
             result = await run.text()

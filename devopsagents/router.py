@@ -1,17 +1,18 @@
 from typing import Literal
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from devopsagents.config import DEFAULT_CONFIG, get_semantics_hit_rule_prompt
 
-
 SYSTEM_PROMPT_TEMPLATE = """
 你是一个意图识别模型，请分析用户的输入，并将其归类为以下明确的意图之一。请以 JSON 格式输出
 
 intent为以下之一:
-general_qa: 用户单纯请教运维知识、闲聊; 
+general_qa: 用户单纯请教运维知识、闲聊;
 troubleshoot: 用户要求排查具体的构建错误、查报错
+package: 用户要求对具体项目执行一次打包或构建
 
 alias严格按以下规则返回:
 {semantics_hit_rule_prompt}
@@ -22,12 +23,12 @@ alias严格按以下规则返回:
 class DevopsRouterDecision(BaseModel):
     """分析用户输入，判定意图并提取关键槽位。"""
 
-    intent: Literal["general_qa", "troubleshoot"] = Field(
-        description="用户单纯请教运维知识、闲聊选择 'general_qa'；用户要求排查具体的构建错误、查报错选择 'troubleshoot'"
+    intent: Literal["general_qa", "troubleshoot", "package"] = Field(
+        description="用户单纯请教运维知识、闲聊选择 'general_qa'；用户要求排查具体的构建错误、查报错选择 'troubleshoot'；用户要求执行打包或构建选择 'package'"
     )
     alias: str | None = Field(
         default=None,
-        description="如果用户的意图是排查构建失败, 请从中提取具体的别名",
+        description="如果用户的意图是排查构建失败或执行打包，请从中提取具体的别名",
     )
 
 
@@ -44,12 +45,18 @@ class DevopsRouter:
     def route(self, user_input: str) -> DevopsRouterDecision:
         template = ChatPromptTemplate.from_messages(
             [
-                ("system", SYSTEM_PROMPT_TEMPLATE.format(semantics_hit_rule_prompt=get_semantics_hit_rule_prompt())),
+                (
+                    "system",
+                    SYSTEM_PROMPT_TEMPLATE.format(
+                        semantics_hit_rule_prompt=get_semantics_hit_rule_prompt()
+                    ),
+                ),
                 ("human", "{user_input}"),
             ]
         )
         chain = template | self.structured_llm
         return chain.invoke({"user_input": user_input})
+
 
 if __name__ == "__main__":
     router = DevopsRouter()
