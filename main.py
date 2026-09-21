@@ -2,16 +2,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import threading  # noqa: E402
-import lark_oapi  # noqa: E402
-from lark import (  # noqa: E402
-    lark_api_client,
-    lark_client,
+import threading
+
+import lark_oapi
+
+from lark import (
     P2ImChatAccessEventBotP2PChatEnteredV1Handler,
     P2ImMessageReceiveV1Handler,
+    lark_api_client,
+    lark_client,
 )
+from utils.app_logging import setup_logging
 
-from utils.app_logging import setup_logging  # noqa: E402
 
 def start_webhook_server() -> None:
     from webhook.app import run_webhook_server

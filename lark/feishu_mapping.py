@@ -36,7 +36,7 @@ def _find_users_by_department(
         )
         if page_token:
             builder.page_token(page_token)
- 
+
         request = builder.build()
 
         try:
@@ -48,17 +48,18 @@ def _find_users_by_department(
             break
 
         if not response.success():
-            lark.logger.error("获取飞书用户信息失败: %d %s", response.code, response.msg)
+            lark.logger.error(
+                "获取飞书用户信息失败: %d %s", response.code, response.msg
+            )
+            break
+
+        if response.data is None or not response.data.items:
             break
 
         for item in response.data.items:
             if item.nickname:
-                users.update(
-                    {
-                        item.nickname.lower(): item.open_id
-                    }
-                )
- 
+                users.update({item.nickname.lower(): item.open_id})
+
         if response.data.has_more:
             page_token = response.data.page_token
         else:
