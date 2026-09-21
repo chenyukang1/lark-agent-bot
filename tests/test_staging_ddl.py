@@ -14,6 +14,16 @@ from devopsagents.config import CodebaseConfig
 webhook = importlib.import_module("webhook.app")
 
 
+def reminder_markdown(commit="aaaaaaa", file="User.java", reason="新增 email 字段"):
+    return (
+        f"{ddl_agent.REPORT_HEADING}\n\n"
+        f"- **关联提交 (Commit)**：`{commit}`\n"
+        f"- **变更文件**：`{file}`\n\n"
+        f"### 🔍 数据库结构变更分析\n\n> {reason}\n\n"
+        "### 🛠️ 请检查是否提交 SQL\n\n- **待确认事项**：请核对迁移脚本"
+    )
+
+
 class BuildChangesTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -99,23 +109,21 @@ class StagingNotificationTest(unittest.IsolatedAsyncioTestCase):
         webhook._staging_lock = asyncio.Lock()
         webhook._staging_sent.clear()
         webhook._staging_done.clear()
+        webhook._staging_reports.clear()
         self.config = MagicMock(alias="stage", jenkins_job_name="staging")
         self.changes = ddl_agent.BuildChanges(
             commits={"a" * 40: {"name": "Alice", "email": "alice@example.com", "files": {"User.java"}}},
             patches="diff",
         )
         self.event = webhook.JenkinsBuildEvent(job_name="stage", build_number=42, build_url="https://jenkins/42")
-        self.report = ddl_agent.DDLReport(findings=[ddl_agent.DDLFinding(
-            commit_id="a" * 40, file_path="User.java", evidence="+String email;",
-            reason="新增持久化字段 email", confidence="high", sql_status="missing",
-        )])
+        self.report = reminder_markdown()
         self.mocks = {}
         for name, mock in {
             "resolve_config": MagicMock(return_value=self.config),
             "collect_build_changes": MagicMock(return_value=self.changes),
             "analyze_build": AsyncMock(return_value=self.report),
             "resolve_open_id": MagicMock(return_value="ou_alice"),
-            "send_message": MagicMock(),
+            "send_sql_notice_card": MagicMock(),
         }.items():
             patcher = patch.object(webhook, name, mock)
             self.mocks[name] = patcher.start()
@@ -124,61 +132,73 @@ class StagingNotificationTest(unittest.IsolatedAsyncioTestCase):
     async def test_private_notification_and_duplicate_callback(self):
         await webhook._notify_staging_ddl(self.event)
         await webhook._notify_staging_ddl(self.event)
-        self.mocks["send_message"].assert_called_once()
-        payload = self.mocks["send_message"].call_args.args[1]
+        self.mocks["send_sql_notice_card"].assert_called_once()
+        payload = self.mocks["send_sql_notice_card"].call_args.args[1]
         self.assertEqual(payload.receive_id_type, "open_id")
         self.assertEqual(payload.receive_id, "ou_alice")
-        self.assertIn("检查是否提交sql", json.loads(payload.content)["text"])
+        self.assertEqual(payload.report_content, self.report)
         self.mocks["analyze_build"].assert_awaited_once()
 
-    async def test_covered_low_confidence_or_no_findings_do_not_notify(self):
-        for findings in [[], [self.report.findings[0].model_copy(update={"sql_status": "covered"})],
-                         [self.report.findings[0].model_copy(update={"confidence": "low"})]]:
-            webhook._staging_done.clear()
-            self.mocks["analyze_build"].return_value = ddl_agent.DDLReport(findings=findings)
-            await webhook._notify_staging_ddl(self.event)
-        self.mocks["send_message"].assert_not_called()
+    async def test_no_reminders_does_not_notify(self):
+        self.mocks["analyze_build"].return_value = ddl_agent.NO_DDL
+        await webhook._notify_staging_ddl(self.event)
+        self.mocks["send_sql_notice_card"].assert_not_called()
+
+    async def test_same_author_receives_each_ddl_change(self):
+        second = reminder_markdown(reason="新增 phone 字段")
+        self.mocks["analyze_build"].return_value = self.report + "\n\n" + second
+        await webhook._notify_staging_ddl(self.event)
+        await webhook._notify_staging_ddl(self.event)
+        payloads = [call.args[1] for call in self.mocks["send_sql_notice_card"].call_args_list]
+        self.assertEqual([p.receive_id for p in payloads], ["ou_alice", "ou_alice"])
+        self.assertEqual([p.report_content for p in payloads], [self.report, second])
+
+    async def test_same_author_partial_failure_retries_only_failed_reminder(self):
+        second = reminder_markdown(reason="新增 phone 字段")
+        self.mocks["analyze_build"].return_value = self.report + "\n\n" + second
+        self.mocks["send_sql_notice_card"].side_effect = [None, RuntimeError("failed"), None]
+        await webhook._notify_staging_ddl(self.event)
+        await webhook._notify_staging_ddl(self.event)
+        self.assertEqual([call.args[1].report_content for call in self.mocks["send_sql_notice_card"].call_args_list],
+                         [self.report, second, second])
+        self.mocks["analyze_build"].assert_awaited_once()
 
     async def test_unknown_recipient_is_not_sent_to_group_and_can_retry(self):
         self.mocks["resolve_open_id"].return_value = ""
         await webhook._notify_staging_ddl(self.event)
-        self.mocks["send_message"].assert_not_called()
+        self.mocks["send_sql_notice_card"].assert_not_called()
         self.mocks["resolve_open_id"].return_value = "ou_alice"
         await webhook._notify_staging_ddl(self.event)
-        self.mocks["send_message"].assert_called_once()
+        self.mocks["send_sql_notice_card"].assert_called_once()
 
     async def test_failed_send_can_retry(self):
-        self.mocks["send_message"].side_effect = [RuntimeError("send failed"), None]
+        self.mocks["send_sql_notice_card"].side_effect = [RuntimeError("send failed"), None]
         await webhook._notify_staging_ddl(self.event)
         await webhook._notify_staging_ddl(self.event)
-        self.assertEqual(self.mocks["send_message"].call_count, 2)
+        self.assertEqual(self.mocks["send_sql_notice_card"].call_count, 2)
 
     async def test_partial_delivery_retries_only_failed_recipient(self):
         self.changes.commits["b" * 40] = {"name": "Bob", "email": "bob@example.com", "files": {"User.java"}}
-        self.report.findings.append(self.report.findings[0].model_copy(update={"commit_id": "b" * 40}))
+        self.mocks["analyze_build"].return_value = self.report + "\n\n" + reminder_markdown(commit="bbbbbbb")
         self.mocks["resolve_open_id"].side_effect = lambda client, name, email: "ou_" + name.lower()
-        self.mocks["send_message"].side_effect = [None, RuntimeError("failed"), None]
+        self.mocks["send_sql_notice_card"].side_effect = [None, RuntimeError("failed"), None]
         await webhook._notify_staging_ddl(self.event)
         await webhook._notify_staging_ddl(self.event)
-        self.assertEqual([call.args[1].receive_id for call in self.mocks["send_message"].call_args_list],
+        self.assertEqual([call.args[1].receive_id for call in self.mocks["send_sql_notice_card"].call_args_list],
                          ["ou_alice", "ou_bob", "ou_bob"])
 
     async def test_analysis_failure_sends_nothing(self):
         self.mocks["analyze_build"].side_effect = ValueError("invalid model output")
         await webhook._notify_staging_ddl(self.event)
-        self.mocks["send_message"].assert_not_called()
+        self.mocks["send_sql_notice_card"].assert_not_called()
         self.assertFalse(webhook._staging_done)
 
-    async def test_endpoint_queues_completed_build_and_ignores_started(self):
+    async def test_endpoint_queues_build(self):
         tasks = BackgroundTasks()
         payload = webhook.WebhookPayload(**self.event.model_dump())
         response = await webhook.jenkins_staging_webhook(tasks, payload)
         self.assertEqual(response.status_code, 202)
         self.assertEqual(len(tasks.tasks), 1)
-        tasks = BackgroundTasks()
-        response = await webhook.jenkins_staging_webhook(tasks, payload.model_copy(update={"phase": "STARTED"}))
-        self.assertFalse(json.loads(response.body)["analyzing"])
-        self.assertFalse(tasks.tasks)
 
     async def test_endpoint_rejects_unknown_job(self):
         self.mocks["resolve_config"].side_effect = ValueError("unknown job")
@@ -186,10 +206,31 @@ class StagingNotificationTest(unittest.IsolatedAsyncioTestCase):
             await webhook.jenkins_staging_webhook(BackgroundTasks(), webhook.WebhookPayload(**self.event.model_dump()))
         self.assertEqual(exc.exception.status_code, 400)
 
-    async def test_model_cannot_choose_commit_or_file_outside_build(self):
-        finding = self.report.findings[0].model_copy(update={"file_path": "Other.java"})
+    async def test_model_outputs_markdown_with_build_context(self):
         with patch.object(ddl_agent, "ChatOpenAI") as model:
-            model.return_value.with_structured_output.return_value.ainvoke = AsyncMock(
-                return_value=ddl_agent.DDLReport(findings=[finding]))
-            with self.assertRaises(ValueError):
-                await ddl_agent.analyze_build(self.changes)
+            model.return_value.ainvoke = AsyncMock(return_value=MagicMock(content=self.report))
+            result = await ddl_agent.analyze_build(
+                self.changes, job_name="staging", build_number=42, build_url="https://jenkins/42",
+            )
+            self.assertEqual(result, self.report)
+            model.return_value.with_structured_output.assert_not_called()
+            messages = model.return_value.ainvoke.call_args.args[0]
+            self.assertIn("staging #42", messages[0][1])
+            self.assertIn("https://jenkins/42", messages[0][1])
+            self.assertIn("Alice", messages[1][1])
+
+    async def test_model_cannot_choose_commit_or_file_outside_build(self):
+        for markdown in [reminder_markdown(file="Other.java"), reminder_markdown(commit="bbbbbbb"),
+                         "本次 DDL 检查未完成：无法读取 diff", "", "unexpected prose"]:
+            with self.subTest(markdown=markdown), patch.object(ddl_agent, "ChatOpenAI") as model:
+                model.return_value.ainvoke = AsyncMock(return_value=MagicMock(content=markdown))
+                with self.assertRaises(ValueError):
+                    await ddl_agent.analyze_build(self.changes, job_name="staging", build_number=42, build_url="url")
+
+    async def test_empty_build_skips_model(self):
+        with patch.object(ddl_agent, "ChatOpenAI") as model:
+            result = await ddl_agent.analyze_build(
+                ddl_agent.BuildChanges({}, ""), job_name="staging", build_number=42, build_url="url",
+            )
+            self.assertEqual(result, ddl_agent.NO_DDL)
+            model.assert_not_called()

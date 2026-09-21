@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 from collections import OrderedDict
 from contextlib import asynccontextmanager
@@ -14,16 +13,19 @@ from devopsagents import DevopsAgent
 from devopsagents.agents.ddl_agent import (
     analyze_build,
     collect_build_changes,
+    parse_reminders,
     resolve_config,
 )
 from lark import (
     SendAlarmCardPayload,
+    SendSQLNoticeCardPayload,
     handle_agent_result,
     lark_api_client,
     send_alarm_card,
+    send_sql_notice_card,
 )
 from lark.feishu_mapping import resolve_open_id
-from lark.handler import SendMessagePayload, card_update_callback, send_message
+from lark.handler import card_update_callback
 
 
 class JenkinsBuildEvent(BaseModel):
@@ -116,11 +118,12 @@ async def jenkins_staging_webhook(
     )
 
 
-# Bounded, single-process retry state. Successful recipients are not sent twice
-# when another recipient fails and Jenkins retries the callback.
+# Bounded, single-process retry state. Cache reports so retrying a failed
+# reminder does not regenerate Markdown or resend successful reminders.
 _staging_lock = asyncio.Lock()
-_staging_sent: OrderedDict[tuple[str, int], set[str]] = OrderedDict()
+_staging_sent: OrderedDict[tuple[str, int], set[int]] = OrderedDict()
 _staging_done: set[tuple[str, int]] = set()
+_staging_reports: dict[tuple[str, int], tuple] = {}
 
 
 async def _notify_staging_ddl(event: JenkinsBuildEvent) -> None:
@@ -133,69 +136,57 @@ async def _notify_staging_ddl(event: JenkinsBuildEvent) -> None:
         while len(_staging_sent) > 1000:
             expired, _ = _staging_sent.popitem(last=False)
             _staging_done.discard(expired)
+            _staging_reports.pop(expired, None)
         try:
             config = resolve_config(event.job_name)
-            changes = await asyncio.to_thread(
-                collect_build_changes, config, event.build_number
-            )
-            report = await analyze_build(changes)
-            recipients: dict[str, list[str]] = {}
+            if key not in _staging_reports:
+                changes = await asyncio.to_thread(
+                    collect_build_changes, config, event.build_number
+                )
+                markdown = await analyze_build(
+                    changes, job_name=config.jenkins_job_name,
+                    build_number=event.build_number, build_url=event.build_url,
+                )
+                reminders = parse_reminders(markdown, changes)
+                _staging_reports[key] = (changes, reminders)
+            changes, reminders = _staging_reports[key]
             complete = True
-            for finding in report.findings:
-                if finding.confidence != "high" or finding.sql_status == "covered":
+            for index, reminder in enumerate(reminders):
+                if index in sent:
                     continue
-                author = changes.commits[finding.commit_id]
-                open_id = await asyncio.to_thread(
-                    resolve_open_id,
-                    lark_api_client.client,
-                    author["name"],
-                    author["email"],
-                )
-                if not open_id or not open_id.startswith("ou_"):
-                    complete = False
-                    lark_oapi.logger.warning(
-                        "DDL 提醒无法匹配飞书用户: commit=%s", finding.commit_id
-                    )
-                    continue
-                recipients.setdefault(open_id, []).append(
-                    f"- {finding.commit_id[:12]} / {finding.file_path}\n"
-                    f"  {finding.reason}\n  变更依据：{finding.evidence}"
-                )
-            for open_id, details in recipients.items():
-                if open_id in sent:
-                    continue
-                content = (
-                    "检查是否提交sql\n"
-                    f"staging 构建：{config.jenkins_job_name} #{event.build_number}\n"
-                    f"{event.build_url}\n"
-                    "检测到可能需要同步数据库 DDL 的修改：\n"
-                    + "\n".join(details)
-                    + "\n请确认对应 SQL 已提交并纳入发布；如已单独提交，请忽略此提醒。"
-                )
+                author = changes.commits[reminder.commit_id]
                 try:
+                    open_id = await asyncio.to_thread(
+                        resolve_open_id, lark_api_client.client,
+                        author["name"], author["email"],
+                    )
+                    if not open_id or not open_id.startswith("ou_"):
+                        complete = False
+                        lark_oapi.logger.warning(
+                            "DDL 提醒无法匹配飞书用户: commit=%s", reminder.commit_id
+                        )
+                        continue
                     await asyncio.to_thread(
-                        send_message,
+                        send_sql_notice_card,
                         lark_api_client.client,
-                        SendMessagePayload(
-                            receive_id_type="open_id",
-                            receive_id=open_id,
-                            msg_type="text",
-                            content=json.dumps({"text": content}, ensure_ascii=False),
+                        SendSQLNoticeCardPayload(
+                            receive_id_type="open_id", receive_id=open_id,
+                            report_content=reminder.markdown,
                         ),
                     )
-                    sent.add(open_id)
+                    sent.add(index)
                 except Exception:
                     complete = False
                     lark_oapi.logger.exception(
-                        "staging DDL 私聊发送失败: build=%s", key
+                        "staging DDL 私聊发送失败: build=%s reminder=%s", key, index
                     )
             if complete:
                 _staging_done.add(key)
             lark_oapi.logger.info(
-                "staging DDL 检查结束: build=%s complete=%s recipients=%s",
+                "staging DDL 检查结束: build=%s complete=%s reminders=%s",
                 key,
                 complete,
-                len(recipients),
+                len(reminders),
             )
         except Exception:
             lark_oapi.logger.exception(
