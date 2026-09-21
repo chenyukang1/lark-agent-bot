@@ -24,6 +24,7 @@ from lark.feishu_mapping import resolve_open_id
 
 ALERT_CARD_ID = os.getenv("ALERT_CARD_ID")
 WELCOME_CARD_ID = os.getenv("WELCOME_CARD_ID")
+SQL_NOTICE_CARD_ID = os.getenv("SQL_NOTICE_CARD_ID")
 
 
 class SendMessagePayload(BaseModel):
@@ -34,6 +35,12 @@ class SendMessagePayload(BaseModel):
 
 
 class SendAlarmCardPayload(BaseModel):
+    receive_id_type: Literal["chat_id", "open_id"]
+    receive_id: str
+    report_content: str
+
+
+class SendSQLNoticeCardPayload(BaseModel):
     receive_id_type: Literal["chat_id", "open_id"]
     receive_id: str
     report_content: str
@@ -308,6 +315,43 @@ def send_alarm_card(client, payload: SendAlarmCardPayload) -> CreateMessageRespo
                 "template_variable": {
                     "report_content": payload.report_content,
                     "status": "分析中",
+                    "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
+                        "%Y-%m-%d %H:%M:%S (UTC+8)"
+                    ),
+                },
+            },
+        }
+    )
+    return send_message(
+        client,
+        SendMessagePayload(
+            receive_id_type=payload.receive_id_type,
+            receive_id=payload.receive_id,
+            msg_type="interactive",
+            content=content,
+        ),
+    )
+
+
+# 发送 SQL 通知卡片
+# Construct a SQL notice card
+# https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card#718fe26b
+def send_sql_notice_card(
+    client, payload: SendSQLNoticeCardPayload
+) -> CreateMessageResponse:
+    try:
+        payload = SendSQLNoticeCardPayload.model_validate(payload)
+    except ValidationError as e:
+        lark.logger.exception(f"send_sql_notice_card 参数校验失败, error: {e}")
+        raise
+
+    content = json.dumps(
+        {
+            "type": "template",
+            "data": {
+                "template_id": SQL_NOTICE_CARD_ID,
+                "template_variable": {
+                    "report_content": payload.report_content,
                     "alarm_time": datetime.now(timezone(timedelta(hours=8))).strftime(
                         "%Y-%m-%d %H:%M:%S (UTC+8)"
                     ),

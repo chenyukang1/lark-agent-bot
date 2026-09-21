@@ -12,9 +12,7 @@ def setup_logging() -> None:
     log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
     log_level = getattr(logging, log_level_name, logging.INFO)
 
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=10 * 1024 * 1024,
@@ -28,6 +26,8 @@ def setup_logging() -> None:
 
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
+
+    logging.getLogger("Lark").propagate = False
 
     # Avoid duplicated handlers when module is imported repeatedly.
     has_file_handler = any(
