@@ -152,7 +152,6 @@ SYSTEM_PROMPT = """
 - **关联提交 (Commit)**：`[7位简短 Commit ID]`
 - **变更文件**：`[文件相对路径]`
 - **结构变更类型**：[新增表 / 新增字段 / 修改字段 / 删除字段 / 修改索引或约束等]
-- **SQL 检查结果**：[本次构建未发现匹配迁移 / 存在迁移但无法确认完整覆盖]
 
 ---
 
@@ -177,19 +176,37 @@ def parse_reminders(markdown: str, changes: BuildChanges) -> list[DDLReminder]:
         raise ValueError("DDL 检查未完成或模型未返回约定的 Markdown 提醒")
     reminders = []
     for section in sections[1:]:
-        commit_fields = re.findall(r"(?m)^- \*\*关联提交 \(Commit\)\*\*[：:]\s*`([0-9a-fA-F]{7,64})`\s*$", section)
-        file_fields = re.findall(r"(?m)^- \*\*变更文件\*\*[：:]\s*`([^`\n]+)`\s*$", section)
+        commit_fields = re.findall(
+            r"(?m)^- \*\*关联提交 \(Commit\)\*\*[：:]\s*`([0-9a-fA-F]{7,64})`\s*$",
+            section,
+        )
+        file_fields = re.findall(
+            r"(?m)^- \*\*变更文件\*\*[：:]\s*`([^`\n]+)`\s*$", section
+        )
         if len(commit_fields) != 1 or len(file_fields) != 1:
             raise ValueError("DDL Markdown 提醒缺少唯一的 commit 或文件路径")
-        matches = [cid for cid in changes.commits if cid.lower().startswith(commit_fields[0].lower())]
-        if len(matches) != 1 or file_fields[0] not in changes.commits[matches[0]]["files"]:
+        matches = [
+            cid
+            for cid in changes.commits
+            if cid.lower().startswith(commit_fields[0].lower())
+        ]
+        if (
+            len(matches) != 1
+            or file_fields[0] not in changes.commits[matches[0]]["files"]
+        ):
             raise ValueError("DDL 分析结果引用了构建范围外或不唯一的提交或文件")
-        reminders.append(DDLReminder(matches[0], REPORT_HEADING + "\n" + section.rstrip()))
+        reminders.append(
+            DDLReminder(matches[0], REPORT_HEADING + "\n" + section.rstrip())
+        )
     return reminders
 
 
 async def analyze_build(
-    changes: BuildChanges, *, job_name: str, build_number: int, build_url: str,
+    changes: BuildChanges,
+    *,
+    job_name: str,
+    build_number: int,
+    build_url: str,
 ) -> str:
     if not changes.commits:
         return NO_DDL
@@ -199,18 +216,35 @@ async def analyze_build(
         model="qwen-max",
         temperature=0.0,
     )
-    response = await model.ainvoke([
-        ("system", SYSTEM_PROMPT.format(
-            jenkins_job_name=job_name, build_number=build_number, build_url=build_url,
-        )),
-        ("user", json.dumps({
-            "commits": [
-                {"commit_id": cid, "author": commit["name"], "files": sorted(commit["files"])}
-                for cid, commit in changes.commits.items()
-            ],
-            "build_patches": changes.patches,
-        }, ensure_ascii=False)),
-    ])
+    response = await model.ainvoke(
+        [
+            (
+                "system",
+                SYSTEM_PROMPT.format(
+                    jenkins_job_name=job_name,
+                    build_number=build_number,
+                    build_url=build_url,
+                ),
+            ),
+            (
+                "user",
+                json.dumps(
+                    {
+                        "commits": [
+                            {
+                                "commit_id": cid,
+                                "author": commit["name"],
+                                "files": sorted(commit["files"]),
+                            }
+                            for cid, commit in changes.commits.items()
+                        ],
+                        "build_patches": changes.patches,
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        ]
+    )
     if not isinstance(response.content, str) or not response.content.strip():
         raise ValueError("DDL 模型未返回有效的 Markdown 文本")
     markdown = response.content.strip()
