@@ -2,6 +2,8 @@ import asyncio
 import os
 
 import lark_oapi
+from agents import devopsAgentV2
+from pydantic import BaseModel
 
 from app.lark.client import get_lark_api_client
 from app.lark.messages import (
@@ -11,8 +13,12 @@ from app.lark.messages import (
     send_alarm_card,
 )
 
-from .devops import DevopsService
-from .models import JenkinsBuildEvent
+
+class JenkinsBuildEvent(BaseModel):
+    job_name: str
+    build_number: int
+    build_url: str
+    phase: str | None = None
 
 
 def _resolve_receive_id_type(receive_id: str) -> str:
@@ -55,7 +61,7 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
         return card_update_callback(get_lark_api_client(), card_message_id, content)
 
     task = asyncio.create_task(
-        DevopsService().handle_user_query(
+        devopsAgentV2.handle_user_query(
             notify_chat_id,
             notify_chat_id,
             build_agent_instruction(event),

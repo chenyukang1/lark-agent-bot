@@ -1,10 +1,10 @@
 import json
 import re
+from dataclasses import dataclass
 
 from langchain_openai import ChatOpenAI
 
 from app.config import get_config
-from app.services.models import BuildChanges, DDLReminder
 
 REPORT_HEADING = "### 🔔 staging 数据库 DDL 同步提醒"
 
@@ -41,6 +41,18 @@ SYSTEM_PROMPT = """
 - **可能影响**：[说明数据库未同步时可能出现的问题，不得表述为已经发生的生产故障]
 - **处理建议**：[请提交人确认对应迁移脚本及执行安排；如 SQL 已单独提交，请核对其覆盖范围。如需提供 DDL 示例，必须有明确数据库类型和结构依据，并标注“示例，执行前需核对”]
 """
+
+
+@dataclass
+class DDLReminder:
+    commit_id: str
+    markdown: str
+
+
+@dataclass
+class BuildChanges:
+    commits: dict[str, dict]
+    patches: str
 
 
 def parse_reminders(markdown: str, changes: BuildChanges) -> list[DDLReminder]:
