@@ -2,9 +2,9 @@ import asyncio
 import os
 
 import lark_oapi
-from agents import devopsAgentV2
 from pydantic import BaseModel
 
+from app.agents import devopsAgentV2
 from app.lark.client import get_lark_api_client
 from app.lark.messages import (
     SendAlarmCardPayload,
