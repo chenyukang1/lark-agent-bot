@@ -1,10 +1,16 @@
+from abc import ABC, abstractmethod
 from typing import ClassVar
 
 from app.config import get_config
 
-from .base import BaseSubAgent
-from .claude_code import ClaudeCodeAgent
+from .claude import ClaudeCodeAgent
 from .cursor import CursorAgent
+
+
+class BaseSubAgent(ABC):
+    @abstractmethod
+    async def run(self, work_dir: str, prompt: str) -> str:
+        pass
 
 
 class SubAgentFactory:

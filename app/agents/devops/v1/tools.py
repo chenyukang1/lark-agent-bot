@@ -1,13 +1,10 @@
 import json
 from typing import Any
 
-import lark_oapi as lark
-
+from app import lark
 from app.config import get_config
 from app.integrations.jenkins import JenkinsClient
-from app.parsers.build_logs import (
-    extract_jenkins_console_errors,
-)
+from app.parsers.build_logs import extract_jenkins_console_errors
 from app.parsers.build_logs import (
     truncate_console_log as _truncate_console_log,
 )

@@ -1,27 +1,8 @@
-from functools import lru_cache
-
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.config import get_config
-
-
-async def run_qa_agent(user_instruction: str, thread_id: str):
-    result = await get_agent().ainvoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": user_instruction,
-                }
-            ]
-        },
-        config={"configurable": {"thread_id": thread_id}},
-    )
-
-    return result["messages"][-1].content
-
 
 system_prompt = """
 # Role
@@ -41,17 +22,32 @@ system_prompt = """
 """
 
 
-@lru_cache(maxsize=1)
-def get_agent():
-    config = get_config()
-    llm = ChatOpenAI(
-        api_key=config["dashscope_api_key"],
-        base_url=config["dashscope_api_host"],
-        model="qwen3.6-flash",
-        temperature=0.0,
-    )
-    return create_agent(
-        model=llm,
-        system_prompt=system_prompt,
-        checkpointer=InMemorySaver(),
-    )
+class QaAgent:
+    def __init__(self) -> None:
+        config = get_config()
+        llm = ChatOpenAI(
+            api_key=config["dashscope_api_key"],
+            base_url=config["dashscope_api_host"],
+            model="qwen3.6-flash",
+            temperature=0.0,
+        )
+        self._agent = create_agent(
+            model=llm,
+            system_prompt=system_prompt,
+            checkpointer=InMemorySaver(),
+        )
+
+    async def run(self, user_input: str, thread_id: str):
+        result = await self._agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": user_input,
+                    }
+                ]
+            },
+            config={"configurable": {"thread_id": thread_id}},
+        )
+
+        return result["messages"][-1].content
