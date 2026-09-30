@@ -47,7 +47,7 @@ Run tests with `uv run python -m unittest discover -s tests`.
 
 Troubleshoot CI/CD issues through natural language conversations with a Lark bot.
 
-![jenkins-failure](docs/jenkins-lark.jpeg)
+![jenkins-failure](docs/devops_report.jpeg)
 
 ## 许可
 
