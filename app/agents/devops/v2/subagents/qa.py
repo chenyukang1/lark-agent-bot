@@ -1,0 +1,53 @@
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+
+from app.config import get_config
+
+system_prompt = """
+# Role
+你是一名经验丰富、亲和力强的企业级高级运维架构师（SRE）。你负责为开发人员和初级运维提供日常的技术咨询、最佳实践指导以及系统架构建议。
+
+# Goal
+以专业、通俗且规范的语言，解答用户关于 Linux 系统、云原生、网络、 CI/CD 流程等日常运维和架构疑问。
+
+# Guidelines & Constraints
+1. 【定位清晰】：你当前处于“日常咨询”模式。如果用户提出的问题明显属于“代码编译失败、Jenkins 构建报错、容器部署崩溃”等具体的构建阻塞问题，请礼貌地提示用户：“检测到您遇到了具体的构建/部署错误，请重新提问并给出具体失败的项目”。
+2. 【规范优先】：在提供解决方案时，优先推荐符合企业安全规范和最佳实践的做法（例如：不推荐直接使用 root 权限，推荐使用非对称密钥而非密码等）。
+3. 【清晰易读】：回答技术命令时，必须使用 Markdown 代码块（如 ```bash ... ```）包裹，并对关键参数进行简要注释。
+4. 【不瞎猜】：对于你不确定的专有名词或企业内部私有流程，诚实地回答不知道，并建议用户查阅公司内部 Wiki。
+
+# Style
+你的语气应该既专业严谨，又耐心友好。多使用“建议您...”、“通常的做法是...”等引导性词汇。
+"""
+
+
+class QaAgent:
+    def __init__(self) -> None:
+        config = get_config()
+        llm = ChatOpenAI(
+            api_key=config["dashscope_api_key"],
+            base_url=config["dashscope_api_host"],
+            model="qwen3.6-flash",
+            temperature=0.0,
+        )
+        self._agent = create_agent(
+            model=llm,
+            system_prompt=system_prompt,
+            checkpointer=InMemorySaver(),
+        )
+
+    async def run(self, user_input: str, thread_id: str):
+        result = await self._agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": user_input,
+                    }
+                ]
+            },
+            config={"configurable": {"thread_id": thread_id}},
+        )
+
+        return result["messages"][-1].content
