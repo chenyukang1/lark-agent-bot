@@ -1,0 +1,78 @@
+import json
+import os
+from functools import lru_cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, TypeAdapter
+
+_DEFAULT_PATH = Path(__file__).resolve().parent.parent / "codebase_configs.json"
+
+
+class CodebaseConfig(BaseModel):
+    alias: str = Field(description="别名")
+    jenkins_job_name: str = Field(description="Jenkins Job 名称")
+    jenkins_url: str = Field(description="Jenkins URL")
+    jenkins_user: str = Field(description="Jenkins Username")
+    jenkins_token: str = Field(description="Jenkins Token")
+    project_path: str = Field(description="本地 Git 项目路径")
+    git_branch: str = Field(description="Git 分支名称")
+    semantics_hit_rule: str = Field(
+        description="语义命中规则，用于判断用户输入是否命中该配置"
+    )
+
+
+def _config_path() -> Path:
+    path = os.getenv("CODEBASE_CONFIGS_PATH", _DEFAULT_PATH)
+    return Path(path)
+
+
+def load_codebase_configs() -> dict[str, CodebaseConfig]:
+    path = _config_path()
+    if not path.is_file():
+        raise ValueError(f"Codebase 配置文件不存在: {path}")
+
+    with path.open(encoding="utf-8") as file:
+        data = json.load(file)
+
+    if not isinstance(data, list):
+        raise TypeError(f"Codebase 配置文件格式错误，根节点必须是数组: {path}")
+
+    configs = TypeAdapter(list[CodebaseConfig]).validate_python(data)
+    result = {config.alias: config for config in configs}
+
+    if len(result) != len(configs):
+        raise ValueError(f"Codebase 配置中存在重复 alias: {path}")
+
+    return result
+
+
+@lru_cache(maxsize=1)
+def get_config() -> dict:
+    """Load settings once, on application startup or first explicit use."""
+    load_dotenv()
+    return {
+        "codebase_configs": load_codebase_configs(),
+        "dashscope_api_key": os.getenv("DASHSCOPE_API_KEY"),
+        "dashscope_api_host": os.getenv("DASHSCOPE_API_HOST"),
+        "notify_department_id": os.getenv("NOTIFY_DEPARTMENT_ID"),
+        "sub_agent": os.getenv("SUB_AGENT"),
+    }
+
+
+def get_semantics_hit_rule_prompt() -> str:
+    prompt = ""
+    for codebase_config in get_config()["codebase_configs"].values():
+        prompt += f"如果用户输入 {codebase_config.semantics_hit_rule}，则输出 {codebase_config.alias}\n"
+    prompt += "如果用户输入不命中任何语义命中规则，则输出空字符串"
+    return prompt
+
+
+def resolve_codebase(job_name: str) -> CodebaseConfig:
+    configs = get_config()["codebase_configs"]
+    if job_name in configs:
+        return configs[job_name]
+    matches = [c for c in configs.values() if c.jenkins_job_name == job_name]
+    if len(matches) != 1:
+        raise ValueError(f"Jenkins Job 配置不存在或不唯一: {job_name}")
+    return matches[0]
