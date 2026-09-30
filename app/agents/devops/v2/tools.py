@@ -3,10 +3,11 @@ import logging
 import re
 from dataclasses import dataclass
 
+import lark_oapi as lark
 from pydantic import BaseModel
 
-import lark_oapi as lark
 from app.config import CodebaseConfig, get_config
+from app.parsers import BUILD_LOG_PARSER
 from app.tools.git import GitCommandError, GitRepository
 from app.tools.jenkins import JenkinsClient
 
@@ -59,8 +60,8 @@ def get_latest_failed_build_info(alias: str) -> str:
         console_log = server.get_build_console_output(failed_build_number)
 
         commit_range = _extract_commit_range(build_info)
-        build_errors = _extract_jenkins_build_errors(console_log)
-        server_errors = _extract_server_startup_errors(console_log)
+        build_errors = BUILD_LOG_PARSER.extract_jenkins_build_errors(console_log)
+        server_errors = BUILD_LOG_PARSER.extract_server_startup_errors(console_log)
 
         payload = {
             "jenkins_job_name": code_base_config.jenkins_job_name,
@@ -166,54 +167,3 @@ def collect_build_changes(config: CodebaseConfig, build_number: int) -> BuildCha
                 "构建 diff 超过分析上限，需人工检查 SQL；未截断后交给模型判断"
             )
     return BuildChanges(commits=commits, patches="\n\n".join(patches))
-
-
-def _extract_jenkins_build_errors(console_log: str, max_lines: int = 60) -> str:
-    """
-    从 Jenkins 控制台日志中提取编译失败、测试失败、Maven 报错等关键行。
-    """
-    if not console_log.strip():
-        return "控制台日志为空，无法提取错误片段。"
-
-    keywords = [
-        r"APPLICATION FAILED TO START",
-        r"BUILD FAILURE",
-        r"Compilation failure",
-    ]
-
-    error_index = -1
-    lines = console_log.splitlines()
-    for i, line in enumerate(lines):
-        if any(re.search(kw, line, re.IGNORECASE) for kw in keywords):
-            error_index = i
-            break
-
-    if error_index != -1:
-        logger.debug(f"构建错误成功匹配到核心错误起点（第 {error_index} 行）")
-        return "\n".join(lines[error_index:])
-
-    logger.debug(f"构建错误未匹配到核心错误起点，返回最后 {max_lines} 行")
-    return "\n".join(lines[-max_lines:])
-
-
-def _extract_server_startup_errors(console_log: str) -> str:
-    """
-    从 Jenkins 控制台日志中提取服务器启动日志
-    """
-    if not console_log.strip():
-        return "控制台日志为空，无法提取服务器错误信息。"
-
-    error_index = -1
-    error_pattern = re.compile(r"最近 100 行启动日志", re.IGNORECASE)
-    lines = console_log.splitlines()
-    for i, line in enumerate(lines):
-        if error_pattern.search(line):
-            error_index = i
-            break
-
-    if error_index != -1:
-        logger.debug(f"启动日志成功匹配到核心错误起点（第 {error_index} 行）")
-        return "\n".join(lines[error_index + 1 : error_index + 101])
-    else:
-        logger.debug("启动日志未匹配到核心错误起点")
-        return ""
