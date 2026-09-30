@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app.config import CodebaseConfig
-from app.services import build
+from app.agents.devops.v2 import tools as build
 
 
 class JenkinsPackageTest(unittest.TestCase):
@@ -31,10 +31,8 @@ class JenkinsPackageTest(unittest.TestCase):
         ):
             result = build.trigger_jenkins_build("staging")
 
-        jenkins_module.assert_called_once_with(
-            "https://jenkins.example.com", username="user", password="token"
-        )
-        server.build_job.assert_called_once_with("staging-build")
+        jenkins_module.assert_called_once_with(codebase_config=self.config)
+        server.build_job.assert_called_once_with()
         self.assertIn("队列 ID：42", result)
         self.assertIn(
             "Jenkins 地址：[查看任务](https://jenkins.example.com/job/staging-build/)",

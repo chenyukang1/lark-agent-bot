@@ -2,8 +2,8 @@ import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.integrations.git import GitCommandError
-from app.services import troubleshoot
+from app.agents.devops.v2.subagents import codebase
+from app.tools.git import GitCommandError
 
 
 class TroubleshootTest(unittest.IsolatedAsyncioTestCase):
@@ -25,12 +25,12 @@ class TroubleshootTest(unittest.IsolatedAsyncioTestCase):
     async def test_analysis_receives_prepared_repository_and_build_context(self):
         backend = MagicMock(run=AsyncMock(return_value="analysis"))
         with (
-            patch.object(troubleshoot, "GitRepository") as repository,
+            patch.object(codebase, "GitRepository") as repository,
             patch.object(
-                troubleshoot.SubAgentFactory, "get_sub_agent", return_value=backend
+                codebase.SubAgentFactory, "get_sub_agent", return_value=backend
             ),
         ):
-            result = await troubleshoot.codebase_analysis(self.payload)
+            result = await codebase.codebase_analysis(self.payload)
         repository.return_value.fetch.assert_called_once_with()
         repository.return_value.switch_to_remote.assert_called_once_with("staging")
         self.assertEqual(result, "analysis")
@@ -41,13 +41,13 @@ class TroubleshootTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_fetch_stops_switch_and_analysis(self):
         with (
-            patch.object(troubleshoot, "GitRepository") as repository,
-            patch.object(troubleshoot.SubAgentFactory, "get_sub_agent") as backend,
+            patch.object(codebase, "GitRepository") as repository,
+            patch.object(codebase.SubAgentFactory, "get_sub_agent") as backend,
         ):
             repository.return_value.fetch.side_effect = GitCommandError(
                 1, ["git", "fetch"]
             )
             with self.assertRaises(GitCommandError):
-                await troubleshoot.codebase_analysis(self.payload)
+                await codebase.codebase_analysis(self.payload)
         repository.return_value.switch_to_remote.assert_not_called()
         backend.assert_not_called()

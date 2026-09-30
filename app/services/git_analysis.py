@@ -4,7 +4,7 @@ from contextvars import ContextVar
 import lark_oapi as lark
 
 from app.config import get_config
-from app.integrations.git import GitRepository
+from app.tools.git import GitRepository
 
 # Each agent invocation has its own synchronization state.
 _synced_repos: ContextVar[set[str] | None] = ContextVar("synced_repos", default=None)
