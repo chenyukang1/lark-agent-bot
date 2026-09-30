@@ -59,7 +59,7 @@ class BuildChangesTest(unittest.TestCase):
             factory.return_value.get_build_info.return_value = build_info
             result = build.collect_build_changes(self.config, 42)
             factory.return_value.get_build_info.assert_called_once_with(
-                "folder/staging", 42
+                42
             )
             return result
 

@@ -5,10 +5,10 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from app import lark
+import lark_oapi as lark
 from app.config import CodebaseConfig, get_config
-from app.integrations.git import GitCommandError, GitRepository
-from app.integrations.jenkins import JenkinsClient
+from app.tools.git import GitCommandError, GitRepository
+from app.tools.jenkins import JenkinsClient
 
 MAX_DIFF_CHARS = 100_000
 
@@ -43,14 +43,10 @@ def get_latest_failed_build_info(alias: str) -> str:
     """
 
     code_base_config: CodebaseConfig = get_config()["codebase_configs"][alias]
-    server = JenkinsClient(
-        code_base_config.jenkins_url,
-        username=code_base_config.jenkins_user,
-        password=code_base_config.jenkins_token,
-    )
+    server = JenkinsClient(codebase_config=code_base_config)
 
     try:
-        job_info = server.get_job_info(code_base_config.jenkins_job_name)
+        job_info = server.get_job_info()
         last_failed_build = job_info.get("lastFailedBuild")
         if not last_failed_build:
             return f"Job【{code_base_config.jenkins_job_name}】当前没有失败构建记录。"
@@ -59,12 +55,8 @@ def get_latest_failed_build_info(alias: str) -> str:
             last_failed_build["number"],
             last_failed_build["url"],
         )
-        build_info = server.get_build_info(
-            code_base_config.jenkins_job_name, failed_build_number
-        )
-        console_log = server.get_build_console_output(
-            code_base_config.jenkins_job_name, failed_build_number
-        )
+        build_info = server.get_build_info(failed_build_number)
+        console_log = server.get_build_console_output(failed_build_number)
 
         commit_range = _extract_commit_range(build_info)
         build_errors = _extract_jenkins_build_errors(console_log)
@@ -102,14 +94,10 @@ def trigger_jenkins_build(alias: str) -> str:
     if not code_base_config:
         return f"未找到别名【{alias}】对应的 Jenkins 配置。"
 
-    server = JenkinsClient(
-        code_base_config.jenkins_url,
-        username=code_base_config.jenkins_user,
-        password=code_base_config.jenkins_token,
-    )
+    server = JenkinsClient(codebase_config=code_base_config)
 
     try:
-        queue_id = server.build_job(code_base_config.jenkins_job_name)
+        queue_id = server.build_job()
         lark.logger.info(
             f"Jenkins 打包已触发: job={code_base_config.jenkins_job_name}, queue_id={queue_id}"
         )
@@ -138,12 +126,8 @@ def _extract_commit_range(build_info: dict) -> str:
 
 
 def collect_build_changes(config: CodebaseConfig, build_number: int) -> BuildChanges:
-    server = JenkinsClient(
-        config.jenkins_url,
-        username=config.jenkins_user,
-        password=config.jenkins_token,
-    )
-    build = server.get_build_info(config.jenkins_job_name, build_number)
+    server = JenkinsClient(codebase_config=config)
+    build = server.get_build_info(build_number)
     if "changeSet" not in build and "changeSets" not in build:
         raise ValueError("构建缺少 changeSet/changeSets，无法确定提交范围")
     change_sets = [build.get("changeSet") or {}, *(build.get("changeSets") or [])]

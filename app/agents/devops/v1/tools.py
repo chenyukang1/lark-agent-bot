@@ -1,13 +1,14 @@
 import json
 from typing import Any
 
-from app import lark
+import lark_oapi as lark
+
 from app.config import get_config
-from app.integrations.jenkins import JenkinsClient
 from app.parsers.build_logs import extract_jenkins_console_errors
 from app.parsers.build_logs import (
     truncate_console_log as _truncate_console_log,
 )
+from app.tools.jenkins import JenkinsClient
 
 
 def get_latest_failed_build_info(job_name: str) -> str:
@@ -25,13 +26,13 @@ def get_latest_failed_build_info(job_name: str) -> str:
     server = _get_jenkins_server(job_name)
 
     try:
-        resolved = _resolve_failed_build(server, job_name)
+        resolved = _resolve_failed_build(server)
         if not resolved:
             return f"Job【{job_name}】当前没有失败构建记录。"
 
         failed_build_number, failed_build_url = resolved
-        build_info = server.get_build_info(job_name, failed_build_number)
-        console_log = server.get_build_console_output(job_name, failed_build_number)
+        build_info = server.get_build_info(failed_build_number)
+        console_log = server.get_build_console_output(failed_build_number)
 
         culprits = _extract_culprits(build_info)
         changes = _extract_change_set(build_info)
@@ -69,11 +70,11 @@ def extract_failed_build_console_errors(job_name: str) -> str:
     """
     server = _get_jenkins_server(job_name)
     try:
-        resolved = _resolve_failed_build(server, job_name)
+        resolved = _resolve_failed_build(server)
         if not resolved:
             return f"Job【{job_name}】当前没有失败构建记录。"
         failed_build_number, failed_build_url = resolved
-        console_log = server.get_build_console_output(job_name, failed_build_number)
+        console_log = server.get_build_console_output(failed_build_number)
         errors = extract_jenkins_console_errors(console_log)
         return (
             f"Job【{job_name}】构建 #{failed_build_number}\n"
@@ -86,17 +87,11 @@ def extract_failed_build_console_errors(job_name: str) -> str:
 
 def _get_jenkins_server(job_name: str) -> JenkinsClient:
     config = get_config()["codebase_configs"][job_name]
-    return JenkinsClient(
-        config.jenkins_url,
-        username=config.jenkins_user,
-        password=config.jenkins_token,
-    )
+    return JenkinsClient(codebase_config=config)
 
 
-def _resolve_failed_build(
-    server: JenkinsClient, job_name: str
-) -> tuple[int, str] | None:
-    job_info = server.get_job_info(job_name)
+def _resolve_failed_build(server: JenkinsClient) -> tuple[int, str] | None:
+    job_info = server.get_job_info()
     last_failed_build = job_info.get("lastFailedBuild")
     if not last_failed_build:
         return None

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.integrations.git import GitCommandError, GitRepository
+from app.tools.git import GitCommandError, GitRepository
 
 
 class GitRepositoryTest(unittest.TestCase):

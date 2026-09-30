@@ -3,8 +3,8 @@ import json
 
 import lark_oapi as lark
 
-from app.agents.subagents.factory import SubAgentFactory
-from app.integrations.git import GitRepository
+from app.agents.devops.v2.subagents.base import SubAgentFactory
+from app.tools.git import GitRepository
 
 ANALYSIS_PROMPT = """
 本次涉及到的信息如下：
@@ -35,27 +35,33 @@ $$METADATA:{{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人
 """
 
 
-async def codebase_analysis(payload: str) -> str:
-    """
-    分析指定 Jenkins Job 的代码库。
-    :param jenkins_job_name: Jenkins Job 名称
-    """
-    payload = json.loads(payload)
+class CodebaseAgent:
+    def __init__(self) -> None:
+        pass
 
-    lark.logger.debug(f"codebase_analysis payload: {payload}")
+    async def codebase_analysis(self, payload: str) -> str:
+        """
+        分析指定 Jenkins Job 的代码库。
+        :param jenkins_job_name: Jenkins Job 名称
+        """
+        payload = json.loads(payload)
 
-    repo = GitRepository(payload["project_path"], timeout=60)
-    await asyncio.to_thread(repo.fetch)
-    await asyncio.to_thread(repo.switch_to_remote, payload["git_branch"])
+        lark.logger.debug(f"codebase_analysis payload: {payload}")
 
-    prompt = ANALYSIS_PROMPT.format(
-        jenkins_job_name=payload["jenkins_job_name"],
-        build_number=payload["build_number"],
-        build_url=payload["build_url"],
-        duration_ms=payload["duration_ms"],
-        commit_range=payload["commit_range"],
-        build_errors=payload["build_errors"],
-        server_errors=payload["server_errors"],
-    )
+        repo = GitRepository(payload["project_path"], timeout=60)
+        await asyncio.to_thread(repo.fetch)
+        await asyncio.to_thread(repo.switch_to_remote, payload["git_branch"])
 
-    return await SubAgentFactory.get_sub_agent().run(payload["project_path"], prompt)
+        prompt = ANALYSIS_PROMPT.format(
+            jenkins_job_name=payload["jenkins_job_name"],
+            build_number=payload["build_number"],
+            build_url=payload["build_url"],
+            duration_ms=payload["duration_ms"],
+            commit_range=payload["commit_range"],
+            build_errors=payload["build_errors"],
+            server_errors=payload["server_errors"],
+        )
+
+        return await SubAgentFactory.get_sub_agent().run(
+            payload["project_path"], prompt
+        )
