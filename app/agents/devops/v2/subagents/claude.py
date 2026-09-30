@@ -10,7 +10,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from app.agents.backends.base import BaseSubAgent
+from app.agents.devops.v2.subagents.base import BaseSubAgent
 
 SYSTEM_PROMPT = """
 你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，定位最可能导致失败的提交人（committer）。
@@ -24,7 +24,7 @@ class ClaudeCodeAgent(BaseSubAgent):
         if os.getenv("ANTHROPIC_AUTH_TOKEN") is None:
             raise ValueError("ANTHROPIC_AUTH_TOKEN is not set")
 
-    async def run(self, work_dir: str, prompt: str) -> str:
+    async def run(self, work_dir: str, prompt: str) -> str | None:
         options = ClaudeAgentOptions(
             cwd=work_dir,
             allowed_tools=["Read", "Glob", "Grep", "Bash"],  # Auto-approve these tools
@@ -53,7 +53,7 @@ class ClaudeCodeAgent(BaseSubAgent):
 
     async def run_with_image(
         self, work_dir: str, prompt: str, image_base64: str
-    ) -> str:
+    ) -> str | None:
 
         options = ClaudeAgentOptions(
             model="qwen-vl-max",
