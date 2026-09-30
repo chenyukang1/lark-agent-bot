@@ -1,22 +1,29 @@
+from abc import ABC, abstractmethod
 from typing import ClassVar
 
-from devopsagents.config import DEFAULT_CONFIG
+from app.config import get_config
 
-from .base import BaseSubAgent
-from .claude_code import ClaudeCoodeAgent
+
+class BaseSubAgent(ABC):
+    @abstractmethod
+    async def run(self, work_dir: str, prompt: str) -> str:
+        pass
+
+
+from .claude import ClaudeCodeAgent
 from .cursor import CursorAgent
 
 
 class SubAgentFactory:
     __agent_mapping: ClassVar[dict[str, type[BaseSubAgent]]] = {
         "cursor": CursorAgent,
-        "claude": ClaudeCoodeAgent,
+        "claude": ClaudeCodeAgent,
     }
     _agent_instances: ClassVar[dict[str, BaseSubAgent]] = {}
 
     @classmethod
     def get_sub_agent(cls) -> BaseSubAgent:
-        agent_type = DEFAULT_CONFIG["sub_agent"] or "cursor"
+        agent_type = get_config()["sub_agent"] or "cursor"
         if agent_type not in cls._agent_instances:
             agent_class = cls.__agent_mapping.get(agent_type)
             if not agent_class:
