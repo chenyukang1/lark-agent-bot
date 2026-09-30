@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN groupadd --system app && useradd --system --gid app --create-home app
 
-# jenkins_agent 会调用 git log / blame / pull
+# Git integration is used by build analysis and agent tools
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
