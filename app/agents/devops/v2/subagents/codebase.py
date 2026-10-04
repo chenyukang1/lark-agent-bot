@@ -3,7 +3,7 @@ import json
 
 import lark_oapi as lark
 
-from app.agents.devops.v2.subagents.base import SubAgentFactory
+from app.agents.devops.v2.subagents import SubAgentFactory
 from app.tools.git import GitRepository
 
 ANALYSIS_PROMPT = """

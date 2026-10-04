@@ -10,7 +10,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from app.agents.devops.v2.subagents.base import BaseSubAgent
+from app.agents.devops.v2.subagents import BaseSubAgent
 
 SYSTEM_PROMPT = """
 你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，定位最可能导致失败的提交人（committer）。
