@@ -55,4 +55,5 @@ class DevopsRouter:
             ]
         )
         chain = template | self.structured_llm
-        return chain.invoke({"user_input": user_input})
+        result = chain.invoke({"user_input": user_input})
+        return DevopsRouterDecision.model_validate(result)
