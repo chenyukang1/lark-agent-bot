@@ -64,8 +64,8 @@ class SendMessageError(Exception):
 def send_message(client, payload: SendMessagePayload) -> CreateMessageResponse:
     try:
         payload = SendMessagePayload.model_validate(payload)
-    except ValidationError as e:
-        lark.logger.exception(f"send_message 参数校验失败, error: {e}")
+    except ValidationError:
+        lark.logger.exception("send_message 参数校验失败")
         raise
 
     request = (
@@ -86,10 +86,12 @@ def send_message(client, payload: SendMessagePayload) -> CreateMessageResponse:
     # https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
     try:
         response: CreateMessageResponse = client.im.v1.message.create(request)
-    except Exception as e:
+    except Exception:
         lark.logger.exception(
-            f"调用飞书发送接口异常, receive_id_type={payload.receive_id_type}, "
-            f"receive_id={payload.receive_id}, msg_type={payload.msg_type}, error: {e}"
+            "调用飞书发送接口异常, receive_id_type=%s, receive_id=%s, msg_type=%s",
+            payload.receive_id_type,
+            payload.receive_id,
+            payload.msg_type,
         )
         raise
 
@@ -140,8 +142,8 @@ def send_welcome_card(client, open_id):
 def send_alarm_card(client, payload: SendAlarmCardPayload) -> CreateMessageResponse:
     try:
         payload = SendAlarmCardPayload.model_validate(payload)
-    except ValidationError as e:
-        lark.logger.exception(f"send_alarm_card 参数校验失败, error: {e}")
+    except ValidationError:
+        lark.logger.exception("send_alarm_card 参数校验失败")
         raise
 
     content = json.dumps(
@@ -178,8 +180,8 @@ def send_sql_notice_card(
 ) -> CreateMessageResponse:
     try:
         payload = SendSQLNoticeCardPayload.model_validate(payload)
-    except ValidationError as e:
-        lark.logger.exception(f"send_sql_notice_card 参数校验失败, error: {e}")
+    except ValidationError:
+        lark.logger.exception("send_sql_notice_card 参数校验失败")
         raise
 
     content = json.dumps(
@@ -210,8 +212,8 @@ def send_sql_notice_card(
 def update_alarm_card(client, payload: UpdateAlarmCardPayload) -> PatchMessageResponse:
     try:
         payload = UpdateAlarmCardPayload.model_validate(payload)
-    except ValidationError as e:
-        lark.logger.exception(f"update_alarm_card 参数校验失败, error: {e}")
+    except ValidationError:
+        lark.logger.exception("update_alarm_card 参数校验失败")
         raise
 
     status_text = {
@@ -312,7 +314,7 @@ def handle_agent_result(
 
         status = "success"
     except Exception as e:
-        lark.logger.exception(f"agent执行失败, error: {e}")
+        lark.logger.exception("agent执行失败")
         notify_contents = []
         report_content = f"分析失败: {e}"
         status = "failed"
