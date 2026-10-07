@@ -12,7 +12,6 @@ from app.config import get_config
 
 from . import lark_client
 
-_DEFAULT_PATH = Path(__file__).resolve().parents[2] / "feishu_mapping.json"
 _mapping: dict[str, str] | None = None
 
 logger = logging.getLogger(__name__)
@@ -65,10 +64,11 @@ def resolve_open_id(name: str | None, email: str | None) -> str:
 
 
 def _mapping_path() -> Path:
-    custom = os.getenv("FEISHU_MAPPING_PATH")
+    custom = os.getenv("USER_MAPPING_PATH")
     if custom:
         return Path(custom)
-    return _DEFAULT_PATH
+
+    return Path(__file__).resolve().parents[2] / "user_mapping.json"
 
 
 def _find_users_by_department(department_id: str) -> dict[str, str]:

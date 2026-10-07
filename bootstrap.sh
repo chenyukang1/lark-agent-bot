@@ -36,9 +36,9 @@ if [ ! -f ".env" ]; then
     config_not_set=true
 fi
 
-if [ ! -f "feishu_mapping.json" ]; then
-    cp feishu_mapping.example.json feishu_mapping.json
-    echo "feishu_mapping.json 文件已创建，请编辑 feishu_mapping.json 文件并配置相关环境变量。/ feishu_mapping.json file has been created, please edit the feishu_mapping.json file and configure the related environment variables."
+if [ ! -f "user_mapping.json" ]; then
+    cp user_mapping.example.json user_mapping.json
+    echo "user_mapping.json 文件已创建，请编辑 user_mapping.json 文件并配置相关环境变量。/ user_mapping.json file has been created, please edit the user_mapping.json file and configure the related environment variables."
     config_not_set=true
 fi
 
