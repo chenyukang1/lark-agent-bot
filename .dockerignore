@@ -5,6 +5,6 @@ __pycache__
 .env
 logs
 .vscode
-feishu_mapping.json
+user_mapping.json
 codebase_configs.json
 docker-compose.yml
