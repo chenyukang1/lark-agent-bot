@@ -8,9 +8,9 @@ from app.config import resolve_codebase
 from app.lark.client import get_lark_api_client
 from app.lark.messages import SendSQLNoticeCardPayload, send_sql_notice_card
 from app.lark.users import resolve_open_id
+from app.model import JenkinsBuildEvent
 
 from .build import collect_build_changes
-from .models import JenkinsBuildEvent
 
 # Bounded, single-process retry state. Cache reports so retrying a failed
 # reminder does not regenerate Markdown or resend successful reminders.

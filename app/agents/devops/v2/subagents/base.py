@@ -3,14 +3,15 @@ from typing import ClassVar
 
 from app.config import get_config
 
-from .claude import ClaudeCodeAgent
-from .cursor import CursorAgent
-
 
 class BaseSubAgent(ABC):
     @abstractmethod
     async def run(self, work_dir: str, prompt: str) -> str:
         pass
+
+
+from .claude import ClaudeCodeAgent
+from .cursor import CursorAgent
 
 
 class SubAgentFactory:
