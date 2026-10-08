@@ -4,7 +4,7 @@ import lark_oapi
 from dotenv import load_dotenv
 
 from app.config import get_config
-from app.lark import lark_client
+from app.lark import get_lark_client
 from app.lark.handlers import (
     P2ImChatAccessEventBotP2PChatEnteredV1Handler,
     P2ImMessageReceiveV1Handler,
@@ -53,5 +53,6 @@ def main():
         .build()
     )
 
+    lark_client = get_lark_client()
     lark_client.register_event_handler(event_handler)
     lark_client.start()
