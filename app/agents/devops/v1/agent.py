@@ -3,15 +3,13 @@ from langchain_openai import ChatOpenAI
 
 from app.agents.callbacks.logs import log_handler
 from app.agents.devops.v1.tools import (
+    blame_file_at_line,
     extract_failed_build_console_errors,
+    get_build_commit_range_by_page,
+    get_commit_diff,
     get_latest_failed_build_info,
 )
 from app.config import get_config
-from app.services.git_analysis import (
-    blame_file_at_line,
-    get_build_commit_range_by_page,
-    get_commit_diff,
-)
 
 from .prompts import SYSTEM_PROMPT
 
