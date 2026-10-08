@@ -8,7 +8,7 @@ from lark_oapi.api.im.v1 import (
     P2ImMessageReceiveV1,
 )
 
-from app.services.devops import DevopsService
+from app.agents import devopsAgentV2
 
 from .messages import (
     SendAlarmCardPayload,
@@ -24,7 +24,7 @@ from .messages import (
 class P2ImMessageReceiveV1Handler:
     def __init__(self, client: lark.Client) -> None:
         self.client = client
-        self.devops_agent = DevopsService()
+        self.devops_agent = devopsAgentV2
 
     def handle(self, data: P2ImMessageReceiveV1) -> None:
         if data.event.message.message_type == "text":
