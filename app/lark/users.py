@@ -10,7 +10,7 @@ from lark_oapi.api.contact.v3 import (
 
 from app.config import get_config
 
-from . import lark_client
+from . import get_lark_client
 
 _mapping: dict[str, str] | None = None
 
@@ -89,7 +89,7 @@ def _find_users_by_department(department_id: str) -> dict[str, str]:
 
         try:
             response: FindByDepartmentUserResponse = (
-                lark_client.contact.v3.user.find_by_department(request)
+                get_lark_client().contact.v3.user.find_by_department(request)
             )
         except Exception as e:
             logger.error("获取飞书用户信息失败: %s", e)

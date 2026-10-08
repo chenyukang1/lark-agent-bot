@@ -19,13 +19,14 @@ from app.lark.client import (
 )
 from app.lark.users import resolve_open_id
 
-from . import lark_client
+from . import get_lark_client
 
 logger = logging.getLogger(__name__)
 
 
 class P2ImMessageReceiveV1Handler:
     def __init__(self) -> None:
+        self._lark_client = get_lark_client()
         self.devops_agent = devopsAgentV2
 
     def handle(self, data: P2ImMessageReceiveV1) -> None:
@@ -48,7 +49,7 @@ class P2ImMessageReceiveV1Handler:
                 text_content = json.loads(data.event.message.content)["text"]
             except Exception as e:
                 lark.logger.error(f"文本消息解析失败, error: {e}")
-                lark_client.send_message(
+                self._lark_client.send_message(
                     SendMessagePayload(
                         receive_id_type=receive_id_type,
                         receive_id=receive_id,
@@ -63,7 +64,9 @@ class P2ImMessageReceiveV1Handler:
                 receive_id=receive_id,
                 report_content="收到故障分析任务，正在分析中...",
             )
-            create_message_resp = lark_client.send_alarm_card(send_alarm_card_payload)
+            create_message_resp = self._lark_client.send_alarm_card(
+                send_alarm_card_payload
+            )
             card_message_id = create_message_resp.data.message_id  # type: ignore
 
             agent_task = asyncio.create_task(
@@ -71,7 +74,7 @@ class P2ImMessageReceiveV1Handler:
                     chat_id,
                     open_id,
                     user_input=text_content,
-                    card_callback=lambda t: lark_client.update_alarm_card(
+                    card_callback=lambda t: self._lark_client.update_alarm_card(
                         UpdateAlarmCardPayload(
                             message_id=card_message_id, report_content=t
                         ),
@@ -100,7 +103,7 @@ class P2ImMessageReceiveV1Handler:
                 image_bytes = self.download_image(image_key=image_key)
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 lark.logger.error(f"图片消息解析失败, error: {e}")
-                lark_client.send_message(
+                self._lark_client.send_message(
                     SendMessagePayload(
                         receive_id_type=receive_id_type,
                         receive_id=receive_id,
@@ -115,7 +118,7 @@ class P2ImMessageReceiveV1Handler:
                 return
             except Exception as e:
                 lark.logger.exception("图片下载失败")
-                lark_client.send_message(
+                self._lark_client.send_message(
                     SendMessagePayload(
                         receive_id_type=receive_id_type,
                         receive_id=receive_id,
@@ -130,7 +133,9 @@ class P2ImMessageReceiveV1Handler:
                 receive_id=receive_id,
                 report_content="收到图片故障分析任务，正在识别图片内容...",
             )
-            create_message_resp = lark_client.send_alarm_card(send_alarm_card_payload)
+            create_message_resp = self._lark_client.send_alarm_card(
+                send_alarm_card_payload
+            )
             card_message_id = create_message_resp.data.message_id  # type: ignore
 
             agent_task = asyncio.create_task(
@@ -138,7 +143,7 @@ class P2ImMessageReceiveV1Handler:
                     chat_id,
                     open_id,
                     image_bytes,
-                    card_callback=lambda t: lark_client.update_alarm_card(
+                    card_callback=lambda t: self._lark_client.update_alarm_card(
                         UpdateAlarmCardPayload(
                             message_id=card_message_id, report_content=t
                         ),
@@ -151,7 +156,7 @@ class P2ImMessageReceiveV1Handler:
                 )
             )
         else:
-            lark_client.send_message(
+            self._lark_client.send_message(
                 SendMessagePayload(
                     receive_id_type=data.event.message.chat_type,
                     receive_id=data.event.message.chat_id,
@@ -166,7 +171,7 @@ class P2ImMessageReceiveV1Handler:
 
     def download_image(self, image_key: str) -> bytes:
         request = GetImageRequest.builder().image_key(image_key).build()
-        response = self.client.im.v1.image.get(request)
+        response = get_lark_client().im.v1.image.get(request)
 
         if not response.success():
             raise Exception(
@@ -178,6 +183,7 @@ class P2ImMessageReceiveV1Handler:
 
 class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
     def __init__(self) -> None:
+        self._lark_client = get_lark_client()
         self.welcomed = set[str]()
 
     def handle(self, data: P2ImChatAccessEventBotP2pChatEnteredV1):
@@ -187,7 +193,7 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 
         lark.logger.info(f"欢迎用户 {open_id}")
         self.welcomed.add(open_id)
-        return lark_client.send_welcome_card(open_id)
+        return self._lark_client.send_welcome_card(open_id)
 
 
 def handle_agent_result(
@@ -228,6 +234,7 @@ def handle_agent_result(
         report_content=report_content,
         status=status,
     )
+    lark_client = get_lark_client()
     lark_client.update_alarm_card(update_alarm_card_payload)
 
     for notify_content in notify_contents:

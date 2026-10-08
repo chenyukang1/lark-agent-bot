@@ -4,12 +4,9 @@ import os
 import lark_oapi
 
 from app.agents import devopsAgentV2
-from app.lark import lark_client
-from app.lark.messages import (
-    SendAlarmCardPayload,
-    card_update_callback,
-    handle_agent_result,
-)
+from app.lark import get_lark_client
+from app.lark.handlers import handle_agent_result
+from app.lark.model import SendAlarmCardPayload, UpdateAlarmCardPayload
 from app.model import JenkinsBuildEvent
 
 
@@ -34,6 +31,7 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
         f"正在分析中..."
     )
 
+    lark_client = get_lark_client()
     create_message_resp = lark_client.send_alarm_card(
         SendAlarmCardPayload(
             receive_id_type=receive_id_type,
@@ -48,20 +46,19 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
 
     card_message_id = response_data.message_id
 
-    def card_callback(content):
-        return card_update_callback(get_lark_api_client(), card_message_id, content)
-
     task = asyncio.create_task(
         devopsAgentV2.handle_user_query(
             notify_chat_id,
             notify_chat_id,
             build_agent_instruction(event),
-            card_callback,
+            lambda t: lark_client.update_alarm_card(
+                UpdateAlarmCardPayload(message_id=card_message_id, report_content=t),
+            ),
         )
     )
     task.add_done_callback(
         lambda t: handle_agent_result(
-            get_lark_api_client(), card_message_id, receive_id_type, notify_chat_id, t
+            card_message_id, receive_id_type, notify_chat_id, t
         )
     )
 

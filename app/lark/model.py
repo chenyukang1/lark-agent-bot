@@ -16,6 +16,12 @@ class SendAlarmCardPayload(BaseModel):
     report_content: str
 
 
+class SendDDLNoticeCardPayload(BaseModel):
+    receive_id_type: Literal["chat_id", "open_id"]
+    receive_id: str
+    report_content: str
+
+
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
     report_content: str

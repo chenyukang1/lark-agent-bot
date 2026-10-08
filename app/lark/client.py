@@ -20,6 +20,7 @@ from app.lark.model import (
     LarkClientError,
     LarkClientErrorDetail,
     SendAlarmCardPayload,
+    SendDDLNoticeCardPayload,
     SendMessagePayload,
     UpdateAlarmCardPayload,
 )
@@ -34,8 +35,8 @@ class LarkClient:
         self.app_id = os.environ["APP_ID"]
         self.app_secret = os.environ["APP_SECRET"]
         self.welcome_card_id = os.environ["WELCOME_CARD_ID"]
-        self.alarm_card_id = os.environ["ALERT_CARD_ID"]
-        self.ddl_card_id = os.environ["DDL_NOTICE_CARD_ID"]
+        self.alert_card_id = os.environ["ALERT_CARD_ID"]
+        self.ddl_notice_card_id = os.environ["DDL_NOTICE_CARD_ID"]
         self.log_level = log_level
 
         self._client = (
@@ -148,10 +149,45 @@ class LarkClient:
             {
                 "type": "template",
                 "data": {
-                    "template_id": self.alarm_card_id,
+                    "template_id": self.alert_card_id,
                     "template_variable": {
                         "report_content": payload.report_content,
                         "status": "分析中",
+                        "alarm_time": datetime.now(
+                            timezone(timedelta(hours=8))
+                        ).strftime("%Y-%m-%d %H:%M:%S (UTC+8)"),
+                    },
+                },
+            }
+        )
+        return self.send_message(
+            SendMessagePayload(
+                receive_id_type=payload.receive_id_type,
+                receive_id=payload.receive_id,
+                msg_type="interactive",
+                content=content,
+            ),
+        )
+
+    # Send a ddl notice card
+    # https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card#718fe26b
+    def send_ddl_notice_card(
+        self,
+        payload: SendDDLNoticeCardPayload,
+    ) -> CreateMessageResponse:
+        try:
+            payload = SendDDLNoticeCardPayload.model_validate(payload)
+        except ValidationError:
+            logger.exception("send_sql_notice_card 参数校验失败")
+            raise
+
+        content = json.dumps(
+            {
+                "type": "template",
+                "data": {
+                    "template_id": self.ddl_notice_card_id,
+                    "template_variable": {
+                        "report_content": payload.report_content,
                         "alarm_time": datetime.now(
                             timezone(timedelta(hours=8))
                         ).strftime("%Y-%m-%d %H:%M:%S (UTC+8)"),
@@ -187,7 +223,7 @@ class LarkClient:
             {
                 "type": "template",
                 "data": {
-                    "template_id": self.alarm_card_id,
+                    "template_id": self.alert_card_id,
                     "template_variable": {
                         "report_content": payload.report_content,
                         "status": status_text[payload.status],
