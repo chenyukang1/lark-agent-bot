@@ -27,6 +27,12 @@ class P2ImMessageReceiveV1Handler:
         self.devops_agent = devopsAgentV2
 
     def handle(self, data: P2ImMessageReceiveV1) -> None:
+        if data.event is None:
+            return
+
+        if data.event.message is None:
+            return
+
         if data.event.message.message_type == "text":
             chat_type = data.event.message.chat_type
             chat_id = data.event.message.chat_id
