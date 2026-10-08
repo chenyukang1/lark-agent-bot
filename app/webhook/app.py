@@ -7,7 +7,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.config import get_config, resolve_codebase
-from app.services.models import JenkinsBuildEvent
+from app.model import JenkinsBuildEvent
 from app.services.notifications import notify_jenkins_failure
 from app.services.staging_ddl import notify_staging_ddl
 

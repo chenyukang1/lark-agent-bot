@@ -4,11 +4,12 @@ import os
 import lark_oapi
 
 from app.agents import devopsAgentV2
-from app.lark import lark_client
+from app.lark.client import get_lark_api_client
 from app.lark.messages import (
     SendAlarmCardPayload,
     card_update_callback,
     handle_agent_result,
+    send_alarm_card,
 )
 from app.model import JenkinsBuildEvent
 
@@ -34,7 +35,8 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
         f"正在分析中..."
     )
 
-    create_message_resp = lark_client.send_alarm_card(
+    create_message_resp = send_alarm_card(
+        get_lark_api_client(),
         SendAlarmCardPayload(
             receive_id_type=receive_id_type,
             receive_id=notify_chat_id,
