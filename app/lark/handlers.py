@@ -2,7 +2,8 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
@@ -22,6 +23,14 @@ from app.lark.users import resolve_open_id
 from . import get_lark_client
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentOutputResult:
+    open_id: str | None
+    notify_content: str | None
+    report_content: str
+    status: Literal["success", "failed"]
 
 
 class P2ImMessageReceiveV1Handler:
@@ -83,7 +92,7 @@ class P2ImMessageReceiveV1Handler:
             )
 
             agent_task.add_done_callback(
-                lambda t: handle_agent_result(
+                lambda t: handle_agent_output(
                     card_message_id,
                     receive_id_type,
                     receive_id,
@@ -151,7 +160,7 @@ class P2ImMessageReceiveV1Handler:
                 )
             )
             agent_task.add_done_callback(
-                lambda t: handle_agent_result(
+                lambda t: handle_agent_output(
                     card_message_id,
                     receive_id_type,
                     receive_id,
@@ -199,30 +208,31 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
         return self._lark_client.send_welcome_card(open_id)
 
 
-def handle_agent_result(
+def handle_agent_output(
     card_message_id: str, receive_id_type: str, receive_id: str, agent_output: Any
 ) -> None:
-    open_id, notify_content, report_content, status = parse_agent_output(agent_output)
+    output_result = parse_agent_output(agent_output)
     lark_client = get_lark_client()
 
     update_alarm_card_payload = UpdateAlarmCardPayload(
         message_id=card_message_id,
-        report_content=report_content,
-        status=status,
+        report_content=output_result.report_content,
+        status=output_result.status,
     )
     lark_client.update_alarm_card(update_alarm_card_payload)
 
-    lark_client.send_message(
-        SendMessagePayload(
-            receive_id_type=receive_id_type,
-            receive_id=receive_id,
-            msg_type="text",
-            content=notify_content,
-        ),
-    )
+    if output_result.notify_content:
+        lark_client.send_message(
+            SendMessagePayload(
+                receive_id_type=receive_id_type,
+                receive_id=receive_id,
+                msg_type="text",
+                content=output_result.notify_content,
+            ),
+        )
 
 
-def parse_agent_output(agent_output: str):
+def parse_agent_output(agent_output: str) -> AgentOutputResult:
     try:
         metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
 
@@ -238,7 +248,8 @@ def parse_agent_output(agent_output: str):
             open_id, notify_content = _build_notify_content(metadata)
             report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
         else:
-            logger.warning("agent_output 中没有找到元数据标签")
+            logger.debug("agent_output 中没有找到元数据标签")
+            open_id, notify_content = None, None
             report_content = agent_output
 
         status = "success"
@@ -246,7 +257,7 @@ def parse_agent_output(agent_output: str):
         logger.exception("agent执行失败")
         report_content = f"分析失败: {e}"
         status = "failed"
-    return open_id, notify_content, report_content, status
+    return AgentOutputResult(open_id, notify_content, report_content, status)
 
 
 def _build_notify_content(metadata: dict):

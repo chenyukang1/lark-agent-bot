@@ -6,7 +6,7 @@ import lark_oapi
 
 from app.agents import devopsAgentV2
 from app.lark import get_lark_client
-from app.lark.handlers import handle_agent_result
+from app.lark.handlers import handle_agent_output
 from app.lark.model import SendAlarmCardPayload, UpdateAlarmCardPayload
 from app.model import JenkinsBuildEvent
 
@@ -54,7 +54,7 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
         )
     )
     task.add_done_callback(
-        lambda t: handle_agent_result(
+        lambda t: handle_agent_output(
             card_message_id, receive_id_type, notify_chat_id, t.result()
         )
     )
