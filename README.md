@@ -19,15 +19,6 @@ The system connects Jenkins build events with agent-assisted codebase analysis a
 3. **Lark report**: The analysis results are delivered through the Lark bot so developers can review the findings in their chat workflow.
 4. **Developer feedback loop**: Developers review the report, address the issue, and trigger a new Jenkins build to verify the fix.
 
-## Project layout
-
-Application code lives in `app/`: `webhook/` and `lark/` handle incoming events,
-`services/` orchestrates workflows, `agents/` contains model logic and tool adapters,
-`integrations/` wraps Git and Jenkins, and `parsers/` handles log parsing.
-See [directory responsibilities and Git usage](docs/project-structure.md).
-
-Run tests with `uv run python -m unittest discover -s tests`.
-
 ## Get-started
 
 ### Prerequisites
