@@ -152,7 +152,10 @@ class P2ImMessageReceiveV1Handler:
             )
             agent_task.add_done_callback(
                 lambda t: handle_agent_result(
-                    card_message_id, receive_id_type, receive_id, t.result()
+                    card_message_id,
+                    receive_id_type,
+                    receive_id,
+                    t.result(),
                 )
             )
         else:
@@ -199,56 +202,54 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 def handle_agent_result(
     card_message_id: str, receive_id_type: str, receive_id: str, agent_output: Any
 ) -> None:
-    notify_contents: list[str] = []
-    try:
-        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
-
-        if metadata_matches:
-            for metadata_str in metadata_matches:
-                try:
-                    metadata = json.loads(metadata_str)
-                except json.JSONDecodeError as e:
-                    lark.logger.warning(
-                        "解析 METADATA 失败: %s, error: %s", metadata_str, e
-                    )
-                    continue
-
-                notify_content = _build_notify_content(metadata)
-                if notify_content:
-                    notify_contents.append(notify_content)
-
-            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
-        else:
-            lark.logger.warning("agent_output 中没有找到元数据标签")
-            report_content = agent_output
-
-        status = "success"
-    except Exception as e:
-        lark.logger.exception("agent执行失败")
-        notify_contents = []
-        report_content = f"分析失败: {e}"
-        status = "failed"
+    open_id, notify_content, report_content, status = parse_agent_output(agent_output)
+    lark_client = get_lark_client()
 
     update_alarm_card_payload = UpdateAlarmCardPayload(
         message_id=card_message_id,
         report_content=report_content,
         status=status,
     )
-    lark_client = get_lark_client()
     lark_client.update_alarm_card(update_alarm_card_payload)
 
-    for notify_content in notify_contents:
-        lark_client.send_message(
-            SendMessagePayload(
-                receive_id_type=receive_id_type,
-                receive_id=receive_id,
-                msg_type="text",
-                content=notify_content,
-            ),
-        )
+    lark_client.send_message(
+        SendMessagePayload(
+            receive_id_type=receive_id_type,
+            receive_id=receive_id,
+            msg_type="text",
+            content=notify_content,
+        ),
+    )
 
 
-def _build_notify_content(metadata: dict) -> str | None:
+def parse_agent_output(agent_output: str):
+    try:
+        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
+
+        if metadata_matches:
+            try:
+                metadata = json.loads(metadata_matches[0])
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "解析 METADATA 失败: %s, error: %s", metadata_matches[0], e
+                )
+                raise ValueError("解析 METADATA 失败")
+
+            open_id, notify_content = _build_notify_content(metadata)
+            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
+        else:
+            logger.warning("agent_output 中没有找到元数据标签")
+            report_content = agent_output
+
+        status = "success"
+    except Exception as e:
+        logger.exception("agent执行失败")
+        report_content = f"分析失败: {e}"
+        status = "failed"
+    return open_id, notify_content, report_content, status
+
+
+def _build_notify_content(metadata: dict):
     git_email = metadata.get("email")
     git_name = metadata.get("name")
     open_id = resolve_open_id(git_name, git_email)
@@ -257,9 +258,9 @@ def _build_notify_content(metadata: dict) -> str | None:
     elif git_name:
         feishu_at_tag = f"@{git_name}"
     else:
-        return None
+        raise ValueError("open_id not found")
 
-    return json.dumps(
+    return open_id, json.dumps(
         {
             "text": (
                 f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"

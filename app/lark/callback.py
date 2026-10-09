@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 import lark_oapi
@@ -9,20 +10,16 @@ from app.lark.handlers import handle_agent_result
 from app.lark.model import SendAlarmCardPayload, UpdateAlarmCardPayload
 from app.model import JenkinsBuildEvent
 
-
-def _resolve_receive_id_type(receive_id: str) -> str:
-    if receive_id.startswith("ou_"):
-        return "open_id"
-    return "chat_id"
+logger = logging.getLogger(__name__)
 
 
-async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
+async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
     notify_chat_id = os.getenv("NOTIFY_CHAT_ID")
     if not notify_chat_id:
-        lark_oapi.logger.error("NOTIFY_CHAT_ID 未配置，无法发送飞书通知")
+        logger.error("NOTIFY_CHAT_ID 未配置，无法发送飞书通知")
         return
 
-    receive_id_type = _resolve_receive_id_type(notify_chat_id)
+    receive_id_type = "open_id" if notify_chat_id.startswith("ou_") else "chat_id"
     intro = (
         f"收到 Jenkins 构建失败通知\n"
         f"- Job: {event.job_name}\n"
@@ -58,7 +55,7 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
     )
     task.add_done_callback(
         lambda t: handle_agent_result(
-            card_message_id, receive_id_type, notify_chat_id, t
+            card_message_id, receive_id_type, notify_chat_id, t.result()
         )
     )
 

@@ -6,7 +6,6 @@ import lark_oapi
 from app.agents.ddl import analyze_build, parse_reminders
 from app.config import resolve_codebase
 from app.lark.client import get_lark_api_client
-from app.lark.messages import SendSQLNoticeCardPayload, send_sql_notice_card
 from app.lark.users import resolve_open_id
 from app.model import JenkinsBuildEvent
 from app.tools import collect_build_changes
@@ -53,7 +52,6 @@ async def notify_staging_ddl(event: JenkinsBuildEvent) -> None:
                 try:
                     open_id = await asyncio.to_thread(
                         resolve_open_id,
-                        get_lark_api_client(),
                         author["name"],
                         author["email"],
                     )
