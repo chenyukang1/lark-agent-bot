@@ -7,8 +7,8 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.config import get_config, resolve_codebase
+from app.lark.callback import jenkins_failure_callback
 from app.model import JenkinsBuildEvent
-from app.services.notifications import notify_jenkins_failure
 from app.services.staging_ddl import notify_staging_ddl
 
 from .schemas import WebhookPayload
@@ -51,7 +51,7 @@ async def jenkins_webhook(
         build_url=payload.build_url,
         phase=payload.phase,
     )
-    background_tasks.add_task(notify_jenkins_failure, event)
+    background_tasks.add_task(jenkins_failure_callback, event)
     return JSONResponse(
         {
             "accepted": True,
