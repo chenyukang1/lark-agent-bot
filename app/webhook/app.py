@@ -7,9 +7,8 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.config import get_config, resolve_codebase
-from app.lark.callback import jenkins_failure_callback
+from app.lark.callback import jenkins_failure_callback, notify_staging_ddl
 from app.model import JenkinsBuildEvent, WebhookPayload
-from app.services.staging_ddl import notify_staging_ddl
 
 
 @asynccontextmanager
