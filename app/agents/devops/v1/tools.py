@@ -61,7 +61,7 @@ def get_latest_failed_build_info(job_name: str) -> str:
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
     except Exception as e:
-        lark.logger.exception(f"获取 Jenkins 信息失败: job={job_name}, error={e}")
+        lark.logger.exception("获取 Jenkins 信息失败: job=%s", job_name)
         return f"获取 Jenkins 信息失败: {e}"
 
 
@@ -84,7 +84,7 @@ def extract_failed_build_console_errors(job_name: str) -> str:
             f"URL: {failed_build_url}\n\n{errors}"
         )
     except Exception as e:
-        lark.logger.exception(f"提取控制台错误失败: job={job_name}, error={e}")
+        lark.logger.exception("提取控制台错误失败: job=%s", job_name)
         return f"提取控制台错误失败: {e}"
 
 

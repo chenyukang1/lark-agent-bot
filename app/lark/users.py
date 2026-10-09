@@ -1,8 +1,8 @@
 import json
+import logging
 import os
 from pathlib import Path
 
-import lark_oapi as lark
 from lark_oapi.api.contact.v3 import (
     FindByDepartmentUserRequest,
     FindByDepartmentUserResponse,
@@ -10,20 +10,68 @@ from lark_oapi.api.contact.v3 import (
 
 from app.config import get_config
 
-_DEFAULT_PATH = Path(__file__).resolve().parents[2] / "feishu_mapping.json"
+from . import get_lark_client
+
 _mapping: dict[str, str] | None = None
+
+logger = logging.getLogger(__name__)
+
+
+def load_user_mapping() -> dict[str, str]:
+    global _mapping
+
+    path = _mapping_path()
+    if not path.is_file():
+        logger.warning("飞书邮箱映射文件不存在: %s", path)
+        _mapping = {}
+        return _mapping
+
+    with path.open(encoding="utf-8") as file:
+        data = json.load(file)
+
+    if not isinstance(data, dict):
+        raise TypeError(f"feishu mapping 文件格式错误，根节点必须是对象: {path}")
+
+    _mapping = {
+        email.lower(): open_id
+        for email, open_id in data.items()
+        if isinstance(email, str) and isinstance(open_id, str) and email and open_id
+    }
+    logger.info("已加载 %d 条飞书邮箱映射: %s", len(_mapping), path)
+    return _mapping
+
+
+def resolve_open_id(name: str | None, email: str | None) -> str:
+    if not name and not email:
+        return ""
+
+    if _mapping is None:
+        load_user_mapping()
+
+    assert _mapping is not None
+
+    open_id = _mapping.get(email.lower(), "") if email else ""
+
+    if open_id:
+        return open_id
+
+    notify_department_id = get_config()["notify_department_id"]
+    if not notify_department_id or not name:
+        return ""
+
+    users = _find_users_by_department(notify_department_id)
+    return users.get(name.lower(), "")
 
 
 def _mapping_path() -> Path:
-    custom = os.getenv("FEISHU_MAPPING_PATH")
+    custom = os.getenv("USER_MAPPING_PATH")
     if custom:
         return Path(custom)
-    return _DEFAULT_PATH
+
+    return Path(__file__).resolve().parents[2] / "user_mapping.json"
 
 
-def _find_users_by_department(
-    client: lark.Client, department_id: str
-) -> dict[str, str]:
+def _find_users_by_department(department_id: str) -> dict[str, str]:
     users: dict[str, str] = {}
     page_token = None
     while True:
@@ -41,16 +89,14 @@ def _find_users_by_department(
 
         try:
             response: FindByDepartmentUserResponse = (
-                client.contact.v3.user.find_by_department(request)
+                get_lark_client().contact.v3.user.find_by_department(request)
             )
         except Exception as e:
-            lark.logger.error("获取飞书用户信息失败: %s", e)
+            logger.error("获取飞书用户信息失败: %s", e)
             break
 
         if not response.success():
-            lark.logger.error(
-                "获取飞书用户信息失败: %d %s", response.code, response.msg
-            )
+            logger.error("获取飞书用户信息失败: %d %s", response.code, response.msg)
             break
 
         if response.data is None or not response.data.items:
@@ -66,49 +112,3 @@ def _find_users_by_department(
             break
 
     return users
-
-
-def load_feishu_mapping() -> dict[str, str]:
-    global _mapping
-
-    path = _mapping_path()
-    if not path.is_file():
-        lark.logger.warning("飞书邮箱映射文件不存在: %s", path)
-        _mapping = {}
-        return _mapping
-
-    with path.open(encoding="utf-8") as file:
-        data = json.load(file)
-
-    if not isinstance(data, dict):
-        raise ValueError(f"feishu mapping 文件格式错误，根节点必须是对象: {path}")
-
-    _mapping = {
-        email.lower(): open_id
-        for email, open_id in data.items()
-        if isinstance(email, str) and isinstance(open_id, str) and email and open_id
-    }
-    lark.logger.info("已加载 %d 条飞书邮箱映射: %s", len(_mapping), path)
-    return _mapping
-
-
-def resolve_open_id(client: lark.Client, name: str | None, email: str | None) -> str:
-    if not name and not email:
-        return ""
-
-    if _mapping is None:
-        load_feishu_mapping()
-
-    assert _mapping is not None
-
-    open_id = _mapping.get(email.lower(), "") if email else ""
-
-    if open_id:
-        return open_id
-
-    notify_department_id = get_config()["notify_department_id"]
-    if not notify_department_id or not name:
-        return ""
-
-    users = _find_users_by_department(client, notify_department_id)
-    return users.get(name.lower(), "")

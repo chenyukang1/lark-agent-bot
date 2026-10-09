@@ -15,7 +15,7 @@ wheels/
 .env
 
 # Local Feishu email -> open_id mappings
-feishu_mapping.json
+user_mapping.json
 
 # Local Jenkins / codebase configs
 codebase_configs.json

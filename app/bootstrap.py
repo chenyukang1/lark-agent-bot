@@ -2,10 +2,9 @@ import threading
 
 import lark_oapi
 from dotenv import load_dotenv
-from lark_oapi.core.enum import LogLevel
 
 from app.config import get_config
-from app.lark.client import LarkClient, get_lark_api_client
+from app.lark import get_lark_client
 from app.lark.handlers import (
     P2ImChatAccessEventBotP2PChatEnteredV1Handler,
     P2ImMessageReceiveV1Handler,
@@ -34,16 +33,12 @@ def main():
     load_dotenv()
     setup_logging()
     get_config()
-    lark_client = LarkClient(log_level=LogLevel.DEBUG)
-    api_client = get_lark_api_client()
 
     start_webhook_server()
 
     # Create API client for sending messages
-    p2_im_message_handler = P2ImMessageReceiveV1Handler(client=api_client)
-    p2_im_chat_bot_entered_handler = P2ImChatAccessEventBotP2PChatEnteredV1Handler(
-        client=api_client
-    )
+    p2_im_message_handler = P2ImMessageReceiveV1Handler()
+    p2_im_chat_bot_entered_handler = P2ImChatAccessEventBotP2PChatEnteredV1Handler()
 
     # 注册事件回调
     # Register event handler.
@@ -58,5 +53,6 @@ def main():
         .build()
     )
 
+    lark_client = get_lark_client()
     lark_client.register_event_handler(event_handler)
     lark_client.start()

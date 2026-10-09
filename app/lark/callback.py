@@ -1,32 +1,25 @@
 import asyncio
+import logging
 import os
 
 import lark_oapi
 
 from app.agents import devopsAgentV2
-from app.lark.client import get_lark_api_client
-from app.lark.messages import (
-    SendAlarmCardPayload,
-    card_update_callback,
-    handle_agent_result,
-    send_alarm_card,
-)
+from app.lark import get_lark_client
+from app.lark.handlers import handle_agent_result
+from app.lark.model import SendAlarmCardPayload, UpdateAlarmCardPayload
 from app.model import JenkinsBuildEvent
 
-
-def _resolve_receive_id_type(receive_id: str) -> str:
-    if receive_id.startswith("ou_"):
-        return "open_id"
-    return "chat_id"
+logger = logging.getLogger(__name__)
 
 
-async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
+async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
     notify_chat_id = os.getenv("NOTIFY_CHAT_ID")
     if not notify_chat_id:
-        lark_oapi.logger.error("NOTIFY_CHAT_ID 未配置，无法发送飞书通知")
+        logger.error("NOTIFY_CHAT_ID 未配置，无法发送飞书通知")
         return
 
-    receive_id_type = _resolve_receive_id_type(notify_chat_id)
+    receive_id_type = "open_id" if notify_chat_id.startswith("ou_") else "chat_id"
     intro = (
         f"收到 Jenkins 构建失败通知\n"
         f"- Job: {event.job_name}\n"
@@ -35,8 +28,8 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
         f"正在分析中..."
     )
 
-    create_message_resp = send_alarm_card(
-        get_lark_api_client(),
+    lark_client = get_lark_client()
+    create_message_resp = lark_client.send_alarm_card(
         SendAlarmCardPayload(
             receive_id_type=receive_id_type,
             receive_id=notify_chat_id,
@@ -50,20 +43,19 @@ async def notify_jenkins_failure(event: JenkinsBuildEvent) -> None:
 
     card_message_id = response_data.message_id
 
-    def card_callback(content):
-        return card_update_callback(get_lark_api_client(), card_message_id, content)
-
     task = asyncio.create_task(
         devopsAgentV2.handle_user_query(
             notify_chat_id,
             notify_chat_id,
             build_agent_instruction(event),
-            card_callback,
+            lambda t: lark_client.update_alarm_card(
+                UpdateAlarmCardPayload(message_id=card_message_id, report_content=t),
+            ),
         )
     )
     task.add_done_callback(
         lambda t: handle_agent_result(
-            get_lark_api_client(), card_message_id, receive_id_type, notify_chat_id, t
+            card_message_id, receive_id_type, notify_chat_id, t.result()
         )
     )
 
