@@ -34,7 +34,7 @@ The system connects Jenkins build events with agent-assisted codebase analysis a
 ./bootstrap.sh
 ```
 
-## Talk to the bot
+### Talk to the bot
 
 Troubleshoot CI/CD issues through natural language conversations with a Lark bot.
 
