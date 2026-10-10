@@ -36,7 +36,7 @@ class DevopsAgentV2:
 
             jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(decision.alias)
             card_callback("正在获取 Jenkins 配置并执行打包，请稍候...")
-            return jenkins_client.trigger_jenkins_build()
+            return jenkins_client.trigger_jenkins_build(decision.alias)
 
         else:
             return "抱歉，我无法处理您的请求。"
