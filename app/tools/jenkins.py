@@ -58,8 +58,28 @@ class JenkinsClient:
             self._codebase_config.jenkins_job_name, build_number
         )
 
-    def build_job(self) -> int:
-        return self._server.build_job(self._codebase_config.jenkins_job_name)
+    def trigger_jenkins_build(self, alias: str) -> str:
+        """使用指定别名的 Jenkins 配置触发一次构建。"""
+        try:
+            code_base_config = self._codebase_config
+            queue_id = self._server.build_job(code_base_config.jenkins_job_name)
+            logger.info(
+                f"Jenkins 打包已触发: job={code_base_config.jenkins_job_name}, queue_id={queue_id}"
+            )
+            job_url = (
+                f"{code_base_config.jenkins_url.rstrip('/')}/job/"
+                f"{code_base_config.jenkins_job_name}/"
+            )
+            return (
+                f"已触发 Jenkins 打包任务【{code_base_config.jenkins_job_name}】。"
+                f"队列 ID：{queue_id}\n"
+                f"Jenkins 地址：[查看任务]({job_url})"
+            )
+        except Exception as e:
+            logger.exception(
+                f"触发 Jenkins 打包失败: job={code_base_config.jenkins_job_name}"
+            )
+            return f"触发 Jenkins 打包失败: {e}"
 
     def get_latest_failed_build_info(self) -> str:
         """

@@ -156,6 +156,8 @@ class LarkClient:
                         "alarm_time": datetime.now(
                             timezone(timedelta(hours=8))
                         ).strftime("%Y-%m-%d %H:%M:%S (UTC+8)"),
+                        "header_color": "red",
+                        "event_status": "待处理",
                     },
                 },
             }
@@ -169,8 +171,6 @@ class LarkClient:
             ),
         )
 
-    # Send a ddl notice card
-    # https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/send-feishu-card#718fe26b
     def send_ddl_notice_card(
         self,
         payload: SendDDLNoticeCardPayload,
@@ -238,6 +238,38 @@ class LarkClient:
         request: PatchMessageRequest = (
             PatchMessageRequest.builder()
             .message_id(payload.message_id)
+            .request_body(PatchMessageRequestBody.builder().content(content).build())
+            .build()
+        )
+
+        response: PatchMessageResponse = self._client.im.v1.message.patch(request)  # type: ignore
+        if not response.success():
+            error_detail = LarkClientErrorDetail(
+                code=response.code,
+                msg=response.msg,
+                log_id=response.get_log_id(),
+            )
+            raise LarkClientError(error_detail)
+
+        return response
+
+    def mark_alarm_card_resolved(self, message_id: str):
+        content = json.dumps(
+            {
+                "type": "template",
+                "data": {
+                    "template_id": self.alert_card_id,
+                    "template_variable": {
+                        "header_color": "green",
+                        "event_status": "已完成",
+                    },
+                },
+            }
+        )
+
+        request: PatchMessageRequest = (
+            PatchMessageRequest.builder()
+            .message_id(message_id)
             .request_body(PatchMessageRequestBody.builder().content(content).build())
             .build()
         )

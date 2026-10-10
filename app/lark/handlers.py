@@ -11,14 +11,16 @@ from lark_oapi.api.im.v1 import (
     P2ImChatAccessEventBotP2pChatEnteredV1,
     P2ImMessageReceiveV1,
 )
+from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
 from app.agents import devopsAgentV2
-from app.lark.client import (
+from app.lark.model import (
     SendAlarmCardPayload,
     SendMessagePayload,
     UpdateAlarmCardPayload,
 )
 from app.lark.users import resolve_open_id
+from app.tools import JENKINS_CLIENT_POOL
 
 from . import get_lark_client
 
@@ -27,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentOutputResult:
-    open_id: str | None
     notify_content: str | None
     report_content: str
     status: Literal["success", "failed"]
@@ -208,6 +209,29 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
         return self._lark_client.send_welcome_card(open_id)
 
 
+class P2CardActionTriggerHandler:
+    def __init__(self) -> None:
+        self._lark_client = get_lark_client()
+
+    def handle(self, data: P2CardActionTrigger):
+        if not data.event:
+            logger.warning("Data event None when card action trigger")
+            return
+
+        if not data.event.context:
+            logger.warning("Data event context None when card action trigger")
+            return
+
+        self._lark_client.mark_alarm_card_resolved(
+            message_id=data.event.context.open_message_id
+        )
+
+        if data.event.action and data.event.action.value:
+            alias = data.event.action.value["alias"]
+            jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(alias)
+            jenkins_client.trigger_jenkins_build(alias)
+
+
 def handle_agent_output(
     card_message_id: str, receive_id_type: str, receive_id: str, agent_output: Any
 ) -> None:
@@ -245,11 +269,11 @@ def parse_agent_output(agent_output: str) -> AgentOutputResult:
                 )
                 raise ValueError("解析 METADATA 失败")
 
-            open_id, notify_content = _build_notify_content(metadata)
+            notify_content = _build_notify_content(metadata)
             report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
         else:
             logger.debug("agent_output 中没有找到元数据标签")
-            open_id, notify_content = None, None
+            notify_content = None
             report_content = agent_output
 
         status = "success"
@@ -257,7 +281,7 @@ def parse_agent_output(agent_output: str) -> AgentOutputResult:
         logger.exception("agent执行失败")
         report_content = f"分析失败: {e}"
         status = "failed"
-    return AgentOutputResult(open_id, notify_content, report_content, status)
+    return AgentOutputResult(notify_content, report_content, status)
 
 
 def _build_notify_content(metadata: dict):
@@ -271,7 +295,7 @@ def _build_notify_content(metadata: dict):
     else:
         raise ValueError("open_id not found")
 
-    return open_id, json.dumps(
+    return json.dumps(
         {
             "text": (
                 f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"
