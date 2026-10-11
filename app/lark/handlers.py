@@ -17,6 +17,7 @@ from app.agents import devopsAgentV2
 from app.lark.model import (
     SendAlarmCardPayload,
     SendMessagePayload,
+    SendRebuildCardPayload,
     UpdateAlarmCardPayload,
 )
 from app.lark.users import resolve_open_id
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentOutputResult:
+    open_id: str | None
     report_type: Literal["general_qa", "troubleshoot", "package"]
     notify_content: str | None
     report_content: str
@@ -264,6 +266,12 @@ def handle_agent_output(
             ),
         )
 
+    if output_result.open_id:
+        send_rebuild_card_payload = SendRebuildCardPayload(
+            open_id=output_result.open_id, report_content=output_result.report_content
+        )
+        lark_client.send_rebuild_card(send_rebuild_card_payload)
+
 
 def parse_agent_output(agent_output: tuple[str, str]) -> AgentOutputResult:
     report_type, content = agent_output
@@ -279,19 +287,22 @@ def parse_agent_output(agent_output: tuple[str, str]) -> AgentOutputResult:
                 )
                 raise ValueError("解析 METADATA 失败")
 
-            notify_content = _build_notify_content(metadata)
+            open_id, notify_content = _build_notify_content(metadata)
             report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", content).strip()
         else:
             logger.debug("agent_output 中没有找到元数据标签")
-            notify_content = None
+            open_id, notify_content = None, None
             report_content = content
 
         status = "success"
     except Exception as e:
         logger.exception("agent执行失败")
+        open_id, notify_content = None, None
         report_content = f"分析失败: {e}"
         status = "failed"
-    return AgentOutputResult(report_type, notify_content, report_content, status)
+    return AgentOutputResult(
+        open_id, report_type, notify_content, report_content, status
+    )
 
 
 def _build_notify_content(metadata: dict):
@@ -305,7 +316,7 @@ def _build_notify_content(metadata: dict):
     else:
         raise ValueError("open_id not found")
 
-    return json.dumps(
+    return open_id, json.dumps(
         {
             "text": (
                 f"{feishu_at_tag} 同学，你提交的代码引发了最新的 Jenkins 构建失败，请尽快修复"

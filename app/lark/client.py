@@ -26,6 +26,7 @@ from app.lark.model import (
     SendAlarmCardPayload,
     SendDDLNoticeCardPayload,
     SendMessagePayload,
+    SendRebuildCardPayload,
     UpdateAlarmCardPayload,
 )
 
@@ -40,6 +41,7 @@ class LarkClient:
         self.app_secret = os.environ["APP_SECRET"]
         self.welcome_card_id = os.environ["WELCOME_CARD_ID"]
         self.alert_card_id = os.environ["ALERT_CARD_ID"]
+        self.rebuild_card_id = os.environ["REBUILD_CARD_ID"]
         self.ddl_notice_card_id = os.environ["DDL_NOTICE_CARD_ID"]
         self.log_level = log_level
 
@@ -169,6 +171,38 @@ class LarkClient:
             SendMessagePayload(
                 receive_id_type=payload.receive_id_type,
                 receive_id=payload.receive_id,
+                msg_type="interactive",
+                content=content,
+            ),
+        )
+
+    def send_rebuild_card(self, payload: SendRebuildCardPayload):
+        try:
+            payload = SendRebuildCardPayload.model_validate(payload)
+        except ValidationError:
+            logger.exception("send_rebuild_card 参数校验失败")
+            raise
+
+        content = json.dumps(
+            {
+                "type": "template",
+                "data": {
+                    "template_id": self.rebuild_card_id,
+                    "template_variable": {
+                        "title": "[待处理] 构建故障请及时处理",
+                        "header_color": "red",
+                        "report_content": payload.report_content,
+                        "alarm_time": datetime.now(
+                            timezone(timedelta(hours=8))
+                        ).strftime("%Y-%m-%d %H:%M:%S (UTC+8)"),
+                    },
+                },
+            }
+        )
+        return self.send_message(
+            SendMessagePayload(
+                receive_id_type="open_id",
+                receive_id=payload.open_id,
                 msg_type="interactive",
                 content=content,
             ),
