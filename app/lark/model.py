@@ -16,6 +16,12 @@ class SendAlarmCardPayload(BaseModel):
     report_content: str
 
 
+class SendRebuildCardPayload(BaseModel):
+    open_id: str
+    report_content: str
+    alarm_time: str
+
+
 class SendDDLNoticeCardPayload(BaseModel):
     receive_id_type: Literal["chat_id", "open_id"]
     receive_id: str
@@ -24,6 +30,7 @@ class SendDDLNoticeCardPayload(BaseModel):
 
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
+    report_type: Literal["general_qa", "troubleshoot", "package", "processing"]
     report_content: str
     status: Literal["pending", "success", "failed"] = "pending"
 

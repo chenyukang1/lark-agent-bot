@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
@@ -10,18 +12,35 @@ from lark_oapi.api.im.v1 import (
     P2ImChatAccessEventBotP2pChatEnteredV1,
     P2ImMessageReceiveV1,
 )
+from lark_oapi.event.callback.model.p2_card_action_trigger import (
+    P2CardActionTrigger,
+    P2CardActionTriggerResponse,
+)
 
 from app.agents import devopsAgentV2
-from app.lark.client import (
+from app.agents.devops.router import DevopsRouterDecision
+from app.lark.model import (
     SendAlarmCardPayload,
     SendMessagePayload,
+    SendRebuildCardPayload,
     UpdateAlarmCardPayload,
 )
 from app.lark.users import resolve_open_id
+from app.tools import JENKINS_CLIENT_POOL
 
 from . import get_lark_client
 
 logger = logging.getLogger(__name__)
+card_states = {}
+
+
+@dataclass
+class AgentOutputResult:
+    open_id: str | None
+    decision: DevopsRouterDecision
+    notify_content: str | None
+    report_content: str
+    status: Literal["success", "failed"]
 
 
 class P2ImMessageReceiveV1Handler:
@@ -76,14 +95,16 @@ class P2ImMessageReceiveV1Handler:
                     user_input=text_content,
                     card_callback=lambda t: self._lark_client.update_alarm_card(
                         UpdateAlarmCardPayload(
-                            message_id=card_message_id, report_content=t
+                            message_id=card_message_id,
+                            report_type="processing",
+                            report_content=t,
                         ),
                     ),
                 )
             )
 
             agent_task.add_done_callback(
-                lambda t: handle_agent_result(
+                lambda t: handle_agent_output(
                     card_message_id,
                     receive_id_type,
                     receive_id,
@@ -145,13 +166,15 @@ class P2ImMessageReceiveV1Handler:
                     image_bytes,
                     card_callback=lambda t: self._lark_client.update_alarm_card(
                         UpdateAlarmCardPayload(
-                            message_id=card_message_id, report_content=t
+                            message_id=card_message_id,
+                            report_type="processing",
+                            report_content=t,
                         ),
                     ),
                 )
             )
             agent_task.add_done_callback(
-                lambda t: handle_agent_result(
+                lambda t: handle_agent_output(
                     card_message_id,
                     receive_id_type,
                     receive_id,
@@ -199,32 +222,100 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
         return self._lark_client.send_welcome_card(open_id)
 
 
-def handle_agent_result(
-    card_message_id: str, receive_id_type: str, receive_id: str, agent_output: Any
+class P2CardActionTriggerHandler:
+    def __init__(self) -> None:
+        self._lark_client = get_lark_client()
+
+    def handle(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
+        if not data.event:
+            logger.warning("Data event None when card action trigger")
+            return P2CardActionTriggerResponse()
+
+        if not data.event.context:
+            logger.warning("Data event context None when card action trigger")
+            return P2CardActionTriggerResponse()
+
+        payload = card_states[data.event.context.open_message_id]
+        if not payload:
+            return P2CardActionTriggerResponse()
+
+        jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(payload["alias"])
+        jenkins_client.trigger_jenkins_build()
+        return P2CardActionTriggerResponse(
+            {
+                "toast": {
+                    "type": "info",
+                    "content": "卡片交互成功",
+                    "i18n": {
+                        "zh_cn": "卡片交互成功",
+                        "en_us": "card action success",
+                    },
+                },
+                "card": {
+                    "type": "template",
+                    "data": {
+                        "template_id": self._lark_client.rebuild_card_id,
+                        "template_variable": {
+                            "title": "[已完成] 构建故障处理完成",
+                            "header_color": "green",
+                            "report_content": payload["report_content"],
+                            "alarm_time": payload["alarm_time"],
+                        },
+                    },
+                },
+            }
+        )
+
+
+def handle_agent_output(
+    card_message_id: str,
+    receive_id_type: str,
+    receive_id: str,
+    agent_output: tuple[str, str],
 ) -> None:
-    open_id, notify_content, report_content, status = parse_agent_output(agent_output)
+    output_result = parse_agent_output(agent_output)
     lark_client = get_lark_client()
 
     update_alarm_card_payload = UpdateAlarmCardPayload(
         message_id=card_message_id,
-        report_content=report_content,
-        status=status,
+        report_type=output_result.decision.intent,
+        report_content=output_result.report_content,
+        status=output_result.status,
     )
     lark_client.update_alarm_card(update_alarm_card_payload)
 
-    lark_client.send_message(
-        SendMessagePayload(
-            receive_id_type=receive_id_type,
-            receive_id=receive_id,
-            msg_type="text",
-            content=notify_content,
-        ),
-    )
+    if output_result.notify_content:
+        lark_client.send_message(
+            SendMessagePayload(
+                receive_id_type=receive_id_type,
+                receive_id=receive_id,
+                msg_type="text",
+                content=output_result.notify_content,
+            ),
+        )
+
+    if output_result.open_id:
+        alarm_time = datetime.now(timezone(timedelta(hours=8))).strftime(
+            "%Y-%m-%d %H:%M:%S (UTC+8)"
+        )
+        send_rebuild_card_payload = SendRebuildCardPayload(
+            open_id=output_result.open_id,
+            report_content=output_result.report_content,
+            alarm_time=alarm_time,
+        )
+        response = lark_client.send_rebuild_card(send_rebuild_card_payload)
+        if response.data and response.data.message_id:
+            card_states[response.data.message_id] = {
+                "report_content": output_result.report_content,
+                "alias": output_result.decision.alias,
+                "alarm_time": alarm_time,
+            }
 
 
-def parse_agent_output(agent_output: str):
+def parse_agent_output(agent_output) -> AgentOutputResult:
+    decision, content = agent_output
     try:
-        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
+        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", content)
 
         if metadata_matches:
             try:
@@ -236,17 +327,19 @@ def parse_agent_output(agent_output: str):
                 raise ValueError("解析 METADATA 失败")
 
             open_id, notify_content = _build_notify_content(metadata)
-            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
+            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", content).strip()
         else:
-            logger.warning("agent_output 中没有找到元数据标签")
-            report_content = agent_output
+            logger.debug("agent_output 中没有找到元数据标签")
+            open_id, notify_content = None, None
+            report_content = content
 
         status = "success"
     except Exception as e:
         logger.exception("agent执行失败")
+        open_id, notify_content = None, None
         report_content = f"分析失败: {e}"
         status = "failed"
-    return open_id, notify_content, report_content, status
+    return AgentOutputResult(open_id, decision, notify_content, report_content, status)
 
 
 def _build_notify_content(metadata: dict):

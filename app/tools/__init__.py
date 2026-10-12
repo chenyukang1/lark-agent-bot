@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from app.config import CodebaseConfig
 from app.tools.git import GitCommandError, GitRepository
 from app.tools.jenkins import JenkinsClientPool
+from app.tools.parser import BuildLogParser
 
 JENKINS_CLIENT_POOL = JenkinsClientPool()
+BUILD_LOG_PARSER = BuildLogParser()
 MAX_DIFF_CHARS = 100_000
 
 

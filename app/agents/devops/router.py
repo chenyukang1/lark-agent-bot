@@ -24,7 +24,7 @@ class DevopsRouterDecision(BaseModel):
     """分析用户输入，判定意图并提取关键槽位。"""
 
     intent: Literal["general_qa", "troubleshoot", "package"] = Field(
-        description="用户单纯请教运维知识、闲聊选择 'general_qa'；用户要求排查具体的构建错误、查报错选择 'troubleshoot'；用户要求执行打包或构建选择 'package'"
+        description="用户要求排查具体的构建错误、查报错选择 'troubleshoot'；用户要求执行打包或构建选择 'package'；用户单纯请教运维知识、闲聊等其他所有情况选择 'general_qa'；"
     )
     alias: str | None = Field(
         default=None,

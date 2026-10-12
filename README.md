@@ -43,7 +43,7 @@ Run tests with `uv run python -m unittest discover -s tests`.
 ./bootstrap.sh
 ```
 
-## Talk to the bot
+### Talk to the bot
 
 Troubleshoot CI/CD issues through natural language conversations with a Lark bot.
 

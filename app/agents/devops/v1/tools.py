@@ -6,7 +6,7 @@ from typing import Any
 import lark_oapi as lark
 
 from app.config import get_config
-from app.parsers import BUILD_LOG_PARSER
+from app.tools import BUILD_LOG_PARSER
 from app.tools.git import GitRepository
 from app.tools.jenkins import JenkinsClient
 
