@@ -3,12 +3,13 @@ import threading
 import lark_oapi
 from dotenv import load_dotenv
 
-from app.config import get_config
 from app.lark import get_lark_client
 from app.lark.handlers import (
+    P2CardActionTriggerHandler,
     P2ImChatAccessEventBotP2PChatEnteredV1Handler,
     P2ImMessageReceiveV1Handler,
 )
+from app.lark.users import load_user_mapping
 from app.log import setup_logging
 
 
@@ -32,13 +33,14 @@ def start_webhook_server() -> None:
 def main():
     load_dotenv()
     setup_logging()
-    get_config()
+    load_user_mapping()
 
     start_webhook_server()
 
     # Create API client for sending messages
     p2_im_message_handler = P2ImMessageReceiveV1Handler()
     p2_im_chat_bot_entered_handler = P2ImChatAccessEventBotP2PChatEnteredV1Handler()
+    p2_card_action_trigger_handler = P2CardActionTriggerHandler()
 
     # 注册事件回调
     # Register event handler.
@@ -49,6 +51,9 @@ def main():
         )
         .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(
             lambda data: p2_im_chat_bot_entered_handler.handle(data)
+        )
+        .register_p2_card_action_trigger(
+            lambda data: p2_card_action_trigger_handler.handle(data)
         )
         .build()
     )

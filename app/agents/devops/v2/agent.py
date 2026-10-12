@@ -14,36 +14,38 @@ class DevopsAgentV2:
 
     async def handle_user_query(
         self, chat_id: str, open_id: str, user_input: str, card_callback
-    ) -> str:
+    ):
         decision = self.router.route(user_input)
         if decision.intent == "general_qa":
             thread_id = f"{chat_id}_{open_id}"
             card_callback("正在作为【日常运维助手】回答问题，请稍候...")
-            return await self.qa_agent.run(user_input, thread_id)
+            content = await self.qa_agent.run(user_input, thread_id)
 
         elif decision.intent == "troubleshoot":
             if not decision.alias:
-                return "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。"
+                content = "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。"
 
             card_callback("正在作为【构建故障分析专家】分析故障原因，请稍候...")
             jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(decision.alias)
             payload = jenkins_client.get_latest_failed_build_info()
-            return await self.codebase_agent.codebase_analysis(payload)
+            content = await self.codebase_agent.codebase_analysis(payload)
 
         elif decision.intent == "package":
             if not decision.alias:
-                return "如果您的意图是执行打包，请重新提问并给出具体的任务名称。"
+                content = "如果您的意图是执行打包，请重新提问并给出具体的任务名称。"
 
             jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(decision.alias)
             card_callback("正在获取 Jenkins 配置并执行打包，请稍候...")
-            return jenkins_client.trigger_jenkins_build()
+            content = jenkins_client.trigger_jenkins_build(decision.alias)
 
         else:
-            return "抱歉，我无法处理您的请求。"
+            content = "抱歉，我无法处理您的请求。"
+
+        return decision, content
 
     async def handle_image_query(
         self, chat_id: str, open_id: str, image_bytes: bytes, card_callback
-    ) -> str:
+    ):
         card_callback("收到图片故障分析任务，正在识别图片内容...")
         extracted_text = await self.image_analyze_agent.analyze_image_content(
             image_bytes
