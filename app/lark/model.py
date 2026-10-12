@@ -19,6 +19,7 @@ class SendAlarmCardPayload(BaseModel):
 class SendRebuildCardPayload(BaseModel):
     open_id: str
     report_content: str
+    alarm_time: str
 
 
 class SendDDLNoticeCardPayload(BaseModel):

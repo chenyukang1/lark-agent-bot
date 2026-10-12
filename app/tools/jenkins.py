@@ -58,7 +58,7 @@ class JenkinsClient:
             self._codebase_config.jenkins_job_name, build_number
         )
 
-    def trigger_jenkins_build(self, alias: str) -> str:
+    def trigger_jenkins_build(self) -> str:
         """使用指定别名的 Jenkins 配置触发一次构建。"""
         try:
             code_base_config = self._codebase_config

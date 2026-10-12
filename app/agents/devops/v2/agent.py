@@ -41,7 +41,7 @@ class DevopsAgentV2:
         else:
             content = "抱歉，我无法处理您的请求。"
 
-        return decision.intent, content
+        return decision, content
 
     async def handle_image_query(
         self, chat_id: str, open_id: str, image_bytes: bytes, card_callback

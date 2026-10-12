@@ -189,12 +189,10 @@ class LarkClient:
                 "data": {
                     "template_id": self.rebuild_card_id,
                     "template_variable": {
-                        "title": "[待处理] 构建故障请及时处理",
+                        "title": "[待处理] 构建故障，请及时处理",
                         "header_color": "red",
                         "report_content": payload.report_content,
-                        "alarm_time": datetime.now(
-                            timezone(timedelta(hours=8))
-                        ).strftime("%Y-%m-%d %H:%M:%S (UTC+8)"),
+                        "alarm_time": payload.alarm_time,
                     },
                 },
             }
@@ -298,15 +296,15 @@ class LarkClient:
 
         return response
 
-    def mark_alarm_card_resolved(self, message_id: str):
+    def mark_rebuild_card_resolved(self, message_id: str):
         content = json.dumps(
             {
                 "type": "template",
                 "data": {
-                    "template_id": self.alert_card_id,
+                    "template_id": self.rebuild_card_id,
                     "template_variable": {
+                        "title": "[已完成] 构建故障处理完成",
                         "header_color": "green",
-                        "event_status": "已完成",
                     },
                 },
             }
