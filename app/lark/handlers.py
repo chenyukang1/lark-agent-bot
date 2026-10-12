@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentOutputResult:
+    report_type: Literal["general_qa", "troubleshoot", "package"]
     notify_content: str | None
     report_content: str
     status: Literal["success", "failed"]
@@ -86,7 +87,9 @@ class P2ImMessageReceiveV1Handler:
                     user_input=text_content,
                     card_callback=lambda t: self._lark_client.update_alarm_card(
                         UpdateAlarmCardPayload(
-                            message_id=card_message_id, report_content=t
+                            message_id=card_message_id,
+                            report_type="processing",
+                            report_content=t,
                         ),
                     ),
                 )
@@ -155,7 +158,9 @@ class P2ImMessageReceiveV1Handler:
                     image_bytes,
                     card_callback=lambda t: self._lark_client.update_alarm_card(
                         UpdateAlarmCardPayload(
-                            message_id=card_message_id, report_content=t
+                            message_id=card_message_id,
+                            report_type="processing",
+                            report_content=t,
                         ),
                     ),
                 )
@@ -233,13 +238,17 @@ class P2CardActionTriggerHandler:
 
 
 def handle_agent_output(
-    card_message_id: str, receive_id_type: str, receive_id: str, agent_output: Any
+    card_message_id: str,
+    receive_id_type: str,
+    receive_id: str,
+    agent_output: tuple[str, str],
 ) -> None:
     output_result = parse_agent_output(agent_output)
     lark_client = get_lark_client()
 
     update_alarm_card_payload = UpdateAlarmCardPayload(
         message_id=card_message_id,
+        report_type=output_result.report_type,
         report_content=output_result.report_content,
         status=output_result.status,
     )
@@ -256,9 +265,10 @@ def handle_agent_output(
         )
 
 
-def parse_agent_output(agent_output: str) -> AgentOutputResult:
+def parse_agent_output(agent_output: tuple[str, str]) -> AgentOutputResult:
+    report_type, content = agent_output
     try:
-        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", agent_output)
+        metadata_matches = re.findall(r"\$\$METADATA:(.*?)\$\$", content)
 
         if metadata_matches:
             try:
@@ -270,18 +280,18 @@ def parse_agent_output(agent_output: str) -> AgentOutputResult:
                 raise ValueError("解析 METADATA 失败")
 
             notify_content = _build_notify_content(metadata)
-            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", agent_output).strip()
+            report_content = re.sub(r"\$\$METADATA:.*?\$\$", "", content).strip()
         else:
             logger.debug("agent_output 中没有找到元数据标签")
             notify_content = None
-            report_content = agent_output
+            report_content = content
 
         status = "success"
     except Exception as e:
         logger.exception("agent执行失败")
         report_content = f"分析失败: {e}"
         status = "failed"
-    return AgentOutputResult(notify_content, report_content, status)
+    return AgentOutputResult(report_type, notify_content, report_content, status)
 
 
 def _build_notify_content(metadata: dict):

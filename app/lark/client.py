@@ -4,6 +4,10 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import lark_oapi as lark
+from lark_oapi.api.contact.v3 import (
+    FindByDepartmentUserRequest,
+    FindByDepartmentUserResponse,
+)
 from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
@@ -156,8 +160,7 @@ class LarkClient:
                         "alarm_time": datetime.now(
                             timezone(timedelta(hours=8))
                         ).strftime("%Y-%m-%d %H:%M:%S (UTC+8)"),
-                        "header_color": "red",
-                        "event_status": "待处理",
+                        "header_color": "green",
                     },
                 },
             }
@@ -219,12 +222,20 @@ class LarkClient:
             "failed": "分析失败",
         }
 
+        header_colors = {
+            "processing": "green",
+            "general_qa": "green",
+            "troubleshoot": "red",
+            "package": "green",
+        }
+
         content = json.dumps(
             {
                 "type": "template",
                 "data": {
                     "template_id": self.alert_card_id,
                     "template_variable": {
+                        "header_color": header_colors[payload.report_type],
                         "report_content": payload.report_content,
                         "status": status_text[payload.status],
                         "alarm_time": datetime.now(
@@ -284,3 +295,45 @@ class LarkClient:
             raise LarkClientError(error_detail)
 
         return response
+
+    def find_users_by_department(self, department_id: str) -> dict[str, str]:
+        users: dict[str, str] = {}
+        page_token = None
+        while True:
+            builder = (
+                FindByDepartmentUserRequest.builder()
+                .user_id_type("open_id")
+                .department_id_type("open_department_id")
+                .department_id(department_id)
+                .page_size(10)
+            )
+            if page_token:
+                builder.page_token(page_token)
+
+            request = builder.build()
+
+            try:
+                response: FindByDepartmentUserResponse = (
+                    self._client.contact.v3.user.find_by_department(request)  # type: ignore
+                )
+            except Exception as e:
+                logger.error("获取飞书用户信息失败: %s", e)
+                break
+
+            if not response.success():
+                logger.error("获取飞书用户信息失败: %d %s", response.code, response.msg)
+                break
+
+            if response.data is None or not response.data.items:
+                break
+
+            for item in response.data.items:
+                if item.nickname:
+                    users[item.nickname.lower()] = item.open_id
+
+            if response.data.has_more:
+                page_token = response.data.page_token
+            else:
+                break
+
+        return users

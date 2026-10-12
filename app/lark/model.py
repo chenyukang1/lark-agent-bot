@@ -24,6 +24,7 @@ class SendDDLNoticeCardPayload(BaseModel):
 
 class UpdateAlarmCardPayload(BaseModel):
     message_id: str
+    report_type: Literal["general_qa", "troubleshoot", "package", "processing"]
     report_content: str
     status: Literal["pending", "success", "failed"] = "pending"
 
