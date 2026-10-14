@@ -21,6 +21,8 @@ The system connects Jenkins build events with agent-assisted codebase analysis a
 
 ## Get-started
 
+See [Lark samples](https://github.com/larksuite/lark-samples.git) for bot and application development references.
+
 ### Prerequisites
 
 - Python 3.14+
