@@ -106,6 +106,17 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload.report_content, "触发 Jenkins 打包失败: timeout")
         self.client.mark_rebuild_card_resolved.assert_not_called()
 
+    async def test_duplicate_callback_schedules_only_one_build(self):
+        first_response = self.handler.handle(self.event)
+        second_response = self.handler.handle(self.event)
+        await asyncio.gather(*self.handler._background_tasks)
+
+        self.assertEqual(first_response.toast.content, "已收到构建请求，正在后台触发")
+        self.assertIsNone(second_response.toast)
+        self.assertNotIn("om_card", handlers.card_states)
+        self.pool.get_jenkins_client.assert_called_once_with(alias="test_java")
+        self.jenkins.trigger_jenkins_build.assert_called_once_with()
+
     async def test_background_errors_are_logged_without_retriggering_build(self):
         for operation in (
             self.pool.get_jenkins_client,
@@ -116,6 +127,11 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(operation=operation):
                 self.pool.reset_mock()
                 self.client.reset_mock()
+                handlers.card_states["om_card"] = {
+                    "alias": "test_java",
+                    "report_content": "故障分析结果",
+                    "alarm_time": "2026-10-14 12:00:00",
+                }
                 operation.side_effect = RuntimeError("service unavailable")
                 try:
                     with self.assertLogs(handlers.logger, level="ERROR") as logs:

@@ -237,13 +237,15 @@ class P2CardActionTriggerHandler:
             return P2CardActionTriggerResponse()
 
         message_id = data.event.context.open_message_id
-        payload = card_states.get(message_id)
-        if not payload:
-            return P2CardActionTriggerResponse()
-
         open_id = data.event.operator.open_id if data.event.operator else None
         if not message_id or not open_id:
             logger.warning("Missing message ID or operator open ID in card action")
+            return P2CardActionTriggerResponse()
+
+        # Claim the card before yielding to the event loop so duplicate callbacks
+        # cannot schedule the same Jenkins build more than once.
+        payload = card_states.pop(message_id, None)
+        if not payload:
             return P2CardActionTriggerResponse()
 
         alias = payload["alias"]
