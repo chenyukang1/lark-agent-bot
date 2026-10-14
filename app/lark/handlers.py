@@ -246,8 +246,7 @@ class P2CardActionTriggerHandler:
             logger.warning("Missing message ID or operator open ID in card action")
             return P2CardActionTriggerResponse()
 
-        # alias = payload["alias"]
-        alias = "test_java"
+        alias = payload["alias"]
         if not alias:
             return P2CardActionTriggerResponse()
 
