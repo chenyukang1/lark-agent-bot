@@ -335,22 +335,22 @@ def handle_agent_output(
             ),
         )
 
-    # if output_result.open_id:
-    alarm_time = datetime.now(timezone(timedelta(hours=8))).strftime(
-        "%Y-%m-%d %H:%M:%S (UTC+8)"
-    )
-    send_rebuild_card_payload = SendRebuildCardPayload(
-        open_id="ou_81b6c60a7ed6a18e1474394e891da7d1",
-        report_content=output_result.report_content,
-        alarm_time=alarm_time,
-    )
-    response = lark_client.send_rebuild_card(send_rebuild_card_payload)
-    if response.data and response.data.message_id:
-        card_states[response.data.message_id] = {
-            "report_content": output_result.report_content,
-            "alias": output_result.decision.alias,
-            "alarm_time": alarm_time,
-        }
+    if output_result.open_id:
+        alarm_time = datetime.now(timezone(timedelta(hours=8))).strftime(
+            "%Y-%m-%d %H:%M:%S (UTC+8)"
+        )
+        send_rebuild_card_payload = SendRebuildCardPayload(
+            open_id=output_result.open_id,
+            report_content=output_result.report_content,
+            alarm_time=alarm_time,
+        )
+        response = lark_client.send_rebuild_card(send_rebuild_card_payload)
+        if response.data and response.data.message_id:
+            card_states[response.data.message_id] = {
+                "report_content": output_result.report_content,
+                "alias": output_result.decision.alias,
+                "alarm_time": alarm_time,
+            }
 
 
 def parse_agent_output(agent_output) -> AgentOutputResult:
