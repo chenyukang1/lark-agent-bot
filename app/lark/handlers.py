@@ -225,6 +225,7 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 class P2CardActionTriggerHandler:
     def __init__(self) -> None:
         self._lark_client = get_lark_client()
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     def handle(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         if not data.event:
@@ -235,36 +236,76 @@ class P2CardActionTriggerHandler:
             logger.warning("Data event context None when card action trigger")
             return P2CardActionTriggerResponse()
 
-        payload = card_states[data.event.context.open_message_id]
+        message_id = data.event.context.open_message_id
+        payload = card_states.get(message_id)
         if not payload:
             return P2CardActionTriggerResponse()
 
-        jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(payload["alias"])
-        jenkins_client.trigger_jenkins_build()
+        open_id = data.event.operator.open_id if data.event.operator else None
+        if not message_id or not open_id:
+            logger.warning("Missing message ID or operator open ID in card action")
+            return P2CardActionTriggerResponse()
+
+        # alias = payload["alias"]
+        alias = "test_java"
+        if not alias:
+            return P2CardActionTriggerResponse()
+
+        # SDK 回调必须同步返回；Jenkins 和飞书的同步请求都在线程中执行。
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                self._trigger_build_and_send_card,
+                alias=alias,
+                message_id=message_id,
+                open_id=open_id,
+                report_content=payload["report_content"],
+                alarm_time=payload["alarm_time"],
+            )
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
         return P2CardActionTriggerResponse(
             {
                 "toast": {
                     "type": "info",
-                    "content": "卡片交互成功",
-                    "i18n": {
-                        "zh_cn": "卡片交互成功",
-                        "en_us": "card action success",
-                    },
-                },
-                "card": {
-                    "type": "template",
-                    "data": {
-                        "template_id": self._lark_client.rebuild_card_id,
-                        "template_variable": {
-                            "title": "[已完成] 构建故障处理完成",
-                            "header_color": "green",
-                            "report_content": payload["report_content"],
-                            "alarm_time": payload["alarm_time"],
-                        },
-                    },
+                    "content": "已收到构建请求，正在后台触发",
                 },
             }
         )
+
+    def _trigger_build_and_send_card(
+        self,
+        *,
+        alias: str,
+        message_id: str,
+        open_id: str,
+        report_content: str,
+        alarm_time: str,
+    ) -> None:
+        try:
+            jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(alias=alias)
+            build_detail = jenkins_client.trigger_jenkins_build()
+            self._lark_client.send_alarm_card(
+                SendAlarmCardPayload(
+                    receive_id_type="open_id",
+                    receive_id=open_id,
+                    report_content=build_detail,
+                )
+            )
+
+            if "失败" not in build_detail:
+                self._lark_client.mark_rebuild_card_resolved(
+                    message_id,
+                    report_content=report_content,
+                    alarm_time=alarm_time,
+                )
+        except Exception:
+            logger.exception(
+                "卡片回调后台构建或发卡失败: alias=%s, message_id=%s",
+                alias,
+                message_id,
+            )
 
 
 def handle_agent_output(
@@ -294,22 +335,22 @@ def handle_agent_output(
             ),
         )
 
-    if output_result.open_id:
-        alarm_time = datetime.now(timezone(timedelta(hours=8))).strftime(
-            "%Y-%m-%d %H:%M:%S (UTC+8)"
-        )
-        send_rebuild_card_payload = SendRebuildCardPayload(
-            open_id=output_result.open_id,
-            report_content=output_result.report_content,
-            alarm_time=alarm_time,
-        )
-        response = lark_client.send_rebuild_card(send_rebuild_card_payload)
-        if response.data and response.data.message_id:
-            card_states[response.data.message_id] = {
-                "report_content": output_result.report_content,
-                "alias": output_result.decision.alias,
-                "alarm_time": alarm_time,
-            }
+    # if output_result.open_id:
+    alarm_time = datetime.now(timezone(timedelta(hours=8))).strftime(
+        "%Y-%m-%d %H:%M:%S (UTC+8)"
+    )
+    send_rebuild_card_payload = SendRebuildCardPayload(
+        open_id="ou_81b6c60a7ed6a18e1474394e891da7d1",
+        report_content=output_result.report_content,
+        alarm_time=alarm_time,
+    )
+    response = lark_client.send_rebuild_card(send_rebuild_card_payload)
+    if response.data and response.data.message_id:
+        card_states[response.data.message_id] = {
+            "report_content": output_result.report_content,
+            "alias": output_result.decision.alias,
+            "alarm_time": alarm_time,
+        }
 
 
 def parse_agent_output(agent_output) -> AgentOutputResult:

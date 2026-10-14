@@ -71,7 +71,7 @@ class JenkinsClient:
                 f"{code_base_config.jenkins_job_name}/"
             )
             return (
-                f"已触发 Jenkins 打包任务【{code_base_config.jenkins_job_name}】。"
+                f"已触发 Jenkins 打包任务【{code_base_config.jenkins_job_name}】\n"
                 f"队列 ID：{queue_id}\n"
                 f"Jenkins 地址：[查看任务]({job_url})"
             )
