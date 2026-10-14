@@ -296,16 +296,28 @@ class LarkClient:
 
         return response
 
-    def mark_rebuild_card_resolved(self, message_id: str):
+    def mark_rebuild_card_resolved(
+        self,
+        message_id: str,
+        *,
+        report_content: str | None = None,
+        alarm_time: str | None = None,
+    ):
+        template_variable = {
+            "title": "[已完成] 构建故障处理完成",
+            "header_color": "green",
+        }
+        if report_content is not None:
+            template_variable["report_content"] = report_content
+        if alarm_time is not None:
+            template_variable["alarm_time"] = alarm_time
+
         content = json.dumps(
             {
                 "type": "template",
                 "data": {
                     "template_id": self.rebuild_card_id,
-                    "template_variable": {
-                        "title": "[已完成] 构建故障处理完成",
-                        "header_color": "green",
-                    },
+                    "template_variable": template_variable,
                 },
             }
         )

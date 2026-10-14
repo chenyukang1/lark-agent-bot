@@ -23,7 +23,10 @@ class DevopsAgentV2:
 
         elif decision.intent == "troubleshoot":
             if not decision.alias:
-                content = "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。"
+                return (
+                    decision,
+                    "如果您的意图是排查构建失败，请重新提问并给出具体的构建失败任务名称。",
+                )
 
             card_callback("正在作为【构建故障分析专家】分析故障原因，请稍候...")
             jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(decision.alias)
@@ -32,11 +35,14 @@ class DevopsAgentV2:
 
         elif decision.intent == "package":
             if not decision.alias:
-                content = "如果您的意图是执行打包，请重新提问并给出具体的任务名称。"
+                return (
+                    decision,
+                    "如果您的意图是执行打包，请重新提问并给出具体的任务名称。",
+                )
 
             jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(decision.alias)
             card_callback("正在获取 Jenkins 配置并执行打包，请稍候...")
-            content = jenkins_client.trigger_jenkins_build(decision.alias)
+            content = jenkins_client.trigger_jenkins_build()
 
         else:
             content = "抱歉，我无法处理您的请求。"

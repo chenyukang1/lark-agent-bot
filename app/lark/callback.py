@@ -65,7 +65,11 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
             notify_chat_id,
             build_agent_instruction(event),
             lambda t: lark_client.update_alarm_card(
-                UpdateAlarmCardPayload(message_id=card_message_id, report_content=t),
+                UpdateAlarmCardPayload(
+                    message_id=card_message_id,
+                    report_type="processing",
+                    report_content=t,
+                ),
             ),
         )
     )
