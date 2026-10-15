@@ -7,9 +7,8 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import JSONResponse
 
-from app.agents.ddl_workflow import notify_staging_ddl
 from app.config import get_config
-from app.lark.callback import jenkins_failure_callback
+from app.lark.callback import jenkins_failure_callback, jenkins_start_callback
 from app.model import JenkinsBuildEvent, WebhookPayload
 
 
@@ -70,7 +69,7 @@ async def jenkins_build_start_webhook(
     )
 
     event = JenkinsBuildEvent(**payload.model_dump())
-    background_tasks.add_task(notify_staging_ddl, event)
+    background_tasks.add_task(jenkins_start_callback, event)
     return JSONResponse(
         {
             "accepted": True,
