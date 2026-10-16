@@ -74,11 +74,13 @@ async def jenkins_build_start_webhook(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    background_tasks.add_task(jenkins_start_callback, event)
+    analyzing = event.phase == "CHECKOUT_COMPLETED"
+    if analyzing:
+        background_tasks.add_task(jenkins_start_callback, event)
     return JSONResponse(
         {
             "accepted": True,
-            "analyzing": True,
+            "analyzing": analyzing,
             "job_name": payload.job_name,
             "build_number": payload.build_number,
         },

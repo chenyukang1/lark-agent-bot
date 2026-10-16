@@ -13,6 +13,7 @@ class BuildStartWebhookTest(unittest.TestCase):
             "job_name": "staging-job",
             "build_number": 42,
             "build_url": "https://example.com/42",
+            "phase": "CHECKOUT_COMPLETED",
         }
         self.configs = {
             "stage": SimpleNamespace(alias="stage", jenkins_job_name="staging-job")
@@ -48,6 +49,31 @@ class BuildStartWebhookTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("unknown-job", response.json()["detail"])
         self.callback.assert_not_called()
+
+    def test_ignores_other_phases_before_checkout_dispatch(self):
+        for phase in ("STARTED", "COMPLETED", "FAILED", "UNKNOWN", "", None):
+            with self.subTest(phase=phase):
+                response = self.client.post(
+                    "/webhook/jenkins/build_start",
+                    json=dict(self.payload, phase=phase),
+                )
+                self.assertEqual(response.status_code, 202)
+                self.assertTrue(response.json()["accepted"])
+                self.assertFalse(response.json()["analyzing"])
+                self.callback.assert_not_called()
+
+        without_phase = dict(self.payload)
+        without_phase.pop("phase")
+        response = self.client.post("/webhook/jenkins/build_start", json=without_phase)
+        self.assertEqual(response.status_code, 202)
+        self.assertFalse(response.json()["analyzing"])
+        self.callback.assert_not_called()
+
+        response = self.client.post("/webhook/jenkins/build_start", json=self.payload)
+        self.assertEqual(response.status_code, 202)
+        self.assertTrue(response.json()["analyzing"])
+        self.callback.assert_awaited_once()
+        self.assertEqual(self.callback.call_args.args[0].phase, "CHECKOUT_COMPLETED")
 
     def test_rejects_ambiguous_job_without_dispatch(self):
         self.configs["other"] = SimpleNamespace(
