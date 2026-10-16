@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import lark_oapi as lark
@@ -53,8 +54,8 @@ class CodebaseAgent:
         lark.logger.debug(f"codebase_analysis payload: {payload}")
 
         repo = GitRepository(payload["project_path"], timeout=60)
-        repo.fetch()
-        repo.switch_to_remote(payload["git_branch"])
+        await asyncio.to_thread(repo.fetch)
+        await asyncio.to_thread(repo.switch_to_remote, payload["git_branch"])
 
         prompt = ANALYSIS_PROMPT.format(
             jenkins_job_name=payload["jenkins_job_name"],
