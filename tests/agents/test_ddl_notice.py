@@ -43,7 +43,7 @@ class DDLNoticeGroupingTest(unittest.IsolatedAsyncioTestCase):
         self.git("-c", f"user.email={email}", "commit", "--allow-empty", "-qm", email)
         return self.git("rev-parse", "HEAD")
 
-    async def test_groups_range_by_author_email_without_switching_checkout(self):
+    async def test_groups_commits_by_author_email_without_switching_checkout(self):
         main_thread = threading.get_ident()
         fetch_threads = []
         with patch.object(
@@ -54,7 +54,7 @@ class DDLNoticeGroupingTest(unittest.IsolatedAsyncioTestCase):
             result = await asyncio.to_thread(
                 self.agent._group_commits_by_email,
                 self.config,
-                f"{self.base}..{self.third}",
+                [self.first, self.second, self.third],
             )
         self.assertEqual(
             result,
@@ -66,27 +66,20 @@ class DDLNoticeGroupingTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(fetch_threads[0], main_thread)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.third)
 
-    async def test_empty_range_and_empty_input(self):
+    async def test_empty_input(self):
         with patch.object(GitRepository, "fetch") as fetch:
             self.assertEqual(
                 await self.agent.review_code(
-                    SimpleNamespace(codebase_confg=self.config), " "
+                    SimpleNamespace(codebase_confg=self.config), []
                 ),
                 {},
             )
             fetch.assert_not_called()
-            self.assertEqual(
-                await self.agent.review_code(
-                    SimpleNamespace(codebase_confg=self.config),
-                    f"{self.third}..{self.third}",
-                ),
-                {},
-            )
 
     async def test_invalid_revision_propagates_error(self):
         with patch.object(GitRepository, "fetch"), self.assertRaises(GitCommandError):
             await self.agent.review_code(
-                SimpleNamespace(codebase_confg=self.config), "missing..revision"
+                SimpleNamespace(codebase_confg=self.config), ["missing-revision"]
             )
 
 
@@ -117,7 +110,7 @@ class DDLNoticeOutputTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_changes_produces_no_notice(self):
         self.agent._sub_agent.run.return_value = "  " + NO_DDL_CHANGES + "\n"
-        self.assertEqual(await self.agent.review_code(self.event, "range"), {})
+        self.assertEqual(await self.agent.review_code(self.event, ["a" * 40]), {})
 
     async def test_change_report_is_preserved(self):
         report = (
@@ -126,7 +119,7 @@ class DDLNoticeOutputTest(unittest.IsolatedAsyncioTestCase):
         )
         self.agent._sub_agent.run.return_value = report
         self.assertEqual(
-            await self.agent.review_code(self.event, "range"), {"ou_alice": report}
+            await self.agent.review_code(self.event, ["a" * 40]), {"ou_alice": report}
         )
 
     async def test_unknown_output_is_error_not_no_changes(self):
@@ -140,7 +133,7 @@ class DDLNoticeOutputTest(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(result=result), self.assertRaises(ValueError):
                 self.agent._sub_agent.run.return_value = result
-                await self.agent.review_code(self.event, "range")
+                await self.agent.review_code(self.event, ["a" * 40])
 
     async def test_no_change_author_does_not_hide_another_report(self):
         report = REPORT_HEADER + "\n新增字段"
@@ -160,5 +153,5 @@ class DDLNoticeOutputTest(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             self.assertEqual(
-                await self.agent.review_code(self.event, "range"), {"ou_bob": report}
+                await self.agent.review_code(self.event, ["a" * 40]), {"ou_bob": report}
             )

@@ -78,8 +78,8 @@ async def jenkins_start_callback(event: JenkinsBuildEvent):
     items = change_set.get("items", [])
     if not items:
         return
-    commitIds = items[0].get("commitId") + ".." + items[-1].get("commitId")
-    task = asyncio.create_task(ddl_notice_agent.review_code(event, commitIds))
+    commit_ids = [item["commitId"] for item in items]
+    task = asyncio.create_task(ddl_notice_agent.review_code(event, commit_ids))
     task.add_done_callback(lambda t: ddl_notice_agent.send_ddl_notice(t.result()))
 
 

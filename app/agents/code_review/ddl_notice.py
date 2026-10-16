@@ -65,9 +65,9 @@ class DDLNoticeAgent:
         self._lark_client = get_lark_client()
 
     async def review_code(
-        self, event: JenkinsBuildEvent, commit_ids: str
+        self, event: JenkinsBuildEvent, commit_ids: list[str]
     ) -> dict[str, str]:
-        if not commit_ids.strip():
+        if not commit_ids:
             return {}
 
         codebase_config = event.codebase_confg
@@ -107,16 +107,18 @@ class DDLNoticeAgent:
         return code_reports
 
     def _group_commits_by_email(
-        self, codebase_config: CodebaseConfig, commit_ids: str
+        self, codebase_config: CodebaseConfig, commit_ids: list[str]
     ) -> dict[str, list[str]]:
+        if not commit_ids:
+            return {}
         repo = GitRepository(codebase_config.project_path, timeout=60)
         repo.fetch()
         commit_info = repo.output(
             "log",
-            "--reverse",
+            "--no-walk=unsorted",
             "--format=%H%x00%ae",
             "--end-of-options",
-            commit_ids,
+            *commit_ids,
             "--",
         )
         commits_by_email: dict[str, list[str]] = {}
