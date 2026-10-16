@@ -2,12 +2,9 @@ import asyncio
 import logging
 
 from app.agents.subagents import SubAgentFactory
-from app.config import CodebaseConfig
 from app.lark import get_lark_client
 from app.lark.model import SendDDLNoticeCardPayload
-from app.lark.users import resolve_open_id
 from app.model import JenkinsBuildEvent
-from app.tools.git import GitRepository
 
 NO_DDL_CHANGES = "NO_DDL_CHANGES"
 ANALYSIS_INCOMPLETE = "DDL_ANALYSIS_INCOMPLETE"
@@ -67,27 +64,23 @@ class DDLNoticeAgent:
         self._lark_client = get_lark_client()
 
     async def review_code(
-        self, event: JenkinsBuildEvent, commit_ids: list[str]
+        self, event: JenkinsBuildEvent, commits: dict[str, list[str]]
     ) -> dict[str, str]:
-        if not commit_ids:
+        if not commits:
             return {}
 
         codebase_config = event.codebase_confg
         if not codebase_config:
             return {}
 
-        commits_by_email = await asyncio.to_thread(
-            self._group_commits_by_email, codebase_config, commit_ids
-        )
         code_reports = {}
-        for email in commits_by_email:
+        for open_id, commit_ids in commits.items():
             prompt = CODE_REVIEW_PROMPT.format(
-                commit_ids=commits_by_email[email],
+                commit_ids=commit_ids,
                 jenkins_job_name=event.job_name,
                 build_number=event.build_number,
                 build_url=event.build_url,
             )
-            open_id = resolve_open_id(email=email)
             report = await self._sub_agent.run(
                 work_dir=codebase_config.project_path,
                 prompt=prompt,
@@ -111,29 +104,6 @@ class DDLNoticeAgent:
 
             code_reports[open_id] = report
         return code_reports
-
-    def _group_commits_by_email(
-        self, codebase_config: CodebaseConfig, commit_ids: list[str]
-    ) -> dict[str, list[str]]:
-        if not commit_ids:
-            return {}
-        repo = GitRepository(codebase_config.project_path, timeout=60)
-        repo.fetch()
-        commit_info = repo.output(
-            "log",
-            "--no-walk=unsorted",
-            "--format=%H%x00%ae",
-            "--end-of-options",
-            *commit_ids,
-            "--",
-        )
-        commits_by_email: dict[str, list[str]] = {}
-        for line in commit_info.splitlines():
-            commit_id, git_email = line.split("\0", 1)
-            git_email = git_email.strip().lower()
-            if git_email:
-                commits_by_email.setdefault(git_email, []).append(commit_id)
-        return commits_by_email
 
     async def send_ddl_notice(self, code_reports: dict[str, str]):
         if not code_reports:

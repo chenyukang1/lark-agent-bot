@@ -12,8 +12,9 @@ from app.lark.model import (
     SendAlarmCardPayload,
     UpdateAlarmCardPayload,
 )
+from app.lark.users import resolve_open_id
 from app.model import JenkinsBuildEvent
-from app.tools import JENKINS_CLIENT_POOL
+from app.tools import collect_build_changes
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +89,16 @@ async def jenkins_start_callback(event: JenkinsBuildEvent) -> None:
     _running_builds.add(key)
     try:
         if key not in _pending_build_reports:
-            jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(key[0])
-            build_info = await asyncio.to_thread(
-                jenkins_client.get_build_info, event.build_number
+            build_changes = await asyncio.to_thread(
+                collect_build_changes, event.codebase_confg, event.build_number
             )
-            items = build_info.get("changeSet", {}).get("items", [])
-            commit_ids = [item["commitId"] for item in items]
+            commits: dict[str, list[str]] = {}
+            for commit_id, detail in build_changes.commits.items():
+                open_id = resolve_open_id(email=detail["email"], name=detail["name"])
+                commits.setdefault(open_id, []).append(commit_id)
+
             reports = (
-                await ddl_notice_agent.review_code(event, commit_ids)
-                if commit_ids else {}
+                await ddl_notice_agent.review_code(event, commits) if commits else {}
             )
             _pending_build_reports[key] = dict(reports)
 
