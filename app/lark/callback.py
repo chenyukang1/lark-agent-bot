@@ -73,7 +73,9 @@ async def jenkins_start_callback(event: JenkinsBuildEvent):
         return
 
     jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(event.codebase_confg.alias)
-    build_info = jenkins_client.get_build_info(event.build_number)
+    build_info = await asyncio.to_thread(
+        jenkins_client.get_build_info, event.build_number
+    )
     change_set = build_info.get("changeSet", {})
     items = change_set.get("items", [])
     if not items:
