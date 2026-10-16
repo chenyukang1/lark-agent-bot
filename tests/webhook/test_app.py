@@ -39,7 +39,7 @@ class WebhookTest(unittest.TestCase):
     def test_failure_dispatch_and_invalid_build_number(self):
         with (
             patch.object(
-                webhook, "notify_jenkins_failure", new_callable=AsyncMock
+                webhook, "jenkins_failure_callback", new_callable=AsyncMock
             ) as notify,
             TestClient(webhook.app) as client,
         ):
@@ -51,6 +51,24 @@ class WebhookTest(unittest.TestCase):
                 client.post("/webhook/jenkins/test", json=invalid).status_code, 422
             )
         notify.assert_awaited_once()
+
+    def test_staging_phase_filter_and_unknown_job(self):
+        with (
+            patch.object(webhook, "resolve_codebase", return_value=MagicMock(alias="stage")) as resolve,
+            patch.object(webhook, "notify_staging_ddl", new_callable=AsyncMock) as notify,
+            TestClient(webhook.app) as client,
+        ):
+            for phase in ("STARTED", "COMPLETED", "FAILED"):
+                response = client.post("/webhook/jenkins/staging", json=dict(self.payload, phase=phase))
+                self.assertEqual(response.status_code, 202)
+                self.assertFalse(response.json()["analyzing"])
+            notify.assert_not_called()
+            response = client.post("/webhook/jenkins/staging", json=dict(self.payload, phase="CHECKOUT_COMPLETED"))
+            self.assertTrue(response.json()["analyzing"])
+            notify.assert_awaited_once()
+            resolve.side_effect = ValueError("unknown job")
+            self.assertEqual(client.post("/webhook/jenkins/staging", json=self.payload).status_code, 400)
+            self.assertEqual(client.post("/webhook/jenkins/staging", json=dict(self.payload, build_number=0)).status_code, 422)
 
     def test_uvicorn_uses_migrated_import_path(self):
         with patch("uvicorn.run") as run:

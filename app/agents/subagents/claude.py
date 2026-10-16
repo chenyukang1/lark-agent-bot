@@ -1,6 +1,6 @@
+import logging
 import os
 
-import lark_oapi as lark
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -11,6 +11,8 @@ from claude_agent_sdk import (
 )
 
 from app.agents.subagents import BaseSubAgent
+
+logger = logging.getLogger(__name__)
 
 
 # Claude Code sdk agent
@@ -33,18 +35,18 @@ class ClaudeCodeAgent(BaseSubAgent):
             options=options,
         ):
             if hasattr(message, "result") and message.result:
-                lark.logger.debug(f"Claude result: {message.result}")
+                logger.debug(f"Claude result: {message.result}")
                 return message.result
 
             # Print human-readable output
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, ThinkingBlock):
-                        lark.logger.debug(f"Claude reasoning: {block.thinking}")
+                        logger.info(f"Claude reasoning: {block.thinking}")
                     elif isinstance(block, ToolUseBlock):
-                        lark.logger.debug(f"Claude tool being called: {block.name}")
+                        logger.info(f"Claude tool being called: {block.name}")
             elif isinstance(message, ResultMessage):
-                lark.logger.debug(f"Done: {message.subtype}")  # Final result
+                logger.debug(f"Done: {message.subtype}")  # Final result
 
     async def run_with_image(
         self, work_dir: str, prompt: str, image_base64: str

@@ -5,7 +5,6 @@ import os
 import lark_oapi
 
 from app.agents import ddl_notice_agent, devopsAgentV2
-from app.config import resolve_codebase
 from app.lark import get_lark_client
 from app.lark.handlers import handle_agent_output
 from app.lark.model import (
@@ -13,6 +12,7 @@ from app.lark.model import (
     UpdateAlarmCardPayload,
 )
 from app.model import JenkinsBuildEvent
+from app.tools import JENKINS_CLIENT_POOL
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +69,17 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
 
 
 async def jenkins_start_callback(event: JenkinsBuildEvent):
-    config = resolve_codebase(event.job_name)
-    task = asyncio.create_task(ddl_notice_agent.review_code())
+    if not event.codebase_confg:
+        return
+
+    jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(event.codebase_confg.alias)
+    build_info = jenkins_client.get_build_info(event.build_number)
+    change_set = build_info.get("changeSet", {})
+    items = change_set.get("items", [])
+    if not items:
+        return
+    commitIds = items[0].get("commitId") + ".." + items[-1].get("commitId")
+    task = asyncio.create_task(ddl_notice_agent.review_code(event, commitIds))
     task.add_done_callback(lambda t: ddl_notice_agent.send_ddl_notice(t.result()))
 
 
