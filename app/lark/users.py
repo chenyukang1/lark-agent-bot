@@ -39,7 +39,7 @@ def load_user_mapping() -> dict[str, str]:
     return _mapping
 
 
-def resolve_open_id(name: str | None, email: str | None) -> str:
+def resolve_open_id(*, email: str | None, name: str | None = None) -> str:
     if not name and not email:
         return ""
 

@@ -1,7 +1,7 @@
 from app.agents.devops.router import DevopsRouter
-from app.agents.devops.v2.subagents.codebase import CodebaseAgent
-from app.agents.devops.v2.subagents.image import ImageAnalyzeAgent
-from app.agents.devops.v2.subagents.qa import QaAgent
+from app.agents.devops.v2.specialists.codebase import CodebaseAgent
+from app.agents.devops.v2.specialists.image import ImageAnalyzeAgent
+from app.agents.devops.v2.specialists.qa import QaAgent
 from app.tools import JENKINS_CLIENT_POOL
 
 

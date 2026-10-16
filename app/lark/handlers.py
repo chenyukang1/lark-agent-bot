@@ -387,7 +387,7 @@ def parse_agent_output(agent_output) -> AgentOutputResult:
 def _build_notify_content(metadata: dict):
     git_email = metadata.get("email")
     git_name = metadata.get("name")
-    open_id = resolve_open_id(git_name, git_email)
+    open_id = resolve_open_id(name=git_name, email=git_email)
     if open_id:
         feishu_at_tag = f'<at user_id="{open_id}"></at>'
     elif git_name:

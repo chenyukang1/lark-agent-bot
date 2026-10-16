@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -7,7 +8,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.config import get_config, resolve_codebase
-from app.lark.callback import jenkins_failure_callback, notify_staging_ddl
+from app.lark.callback import jenkins_failure_callback, jenkins_start_callback
 from app.model import JenkinsBuildEvent, WebhookPayload
 
 
@@ -23,6 +24,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Lark Agent Bot Webhook", lifespan=lifespan)
+logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -30,24 +32,19 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/webhook/jenkins/test")
-async def jenkins_webhook(
+@app.post("/webhook/jenkins/build_fail")
+async def jenkins_build_fail_webhook(
     background_tasks: BackgroundTasks,
     payload: WebhookPayload,
 ) -> JSONResponse:
-    lark_oapi.logger.info(
+    logger.info(
         "收到 Jenkins webhook: job=%s build=#%s phase=%s",
         payload.job_name,
         payload.build_number,
         payload.phase,
     )
 
-    event = JenkinsBuildEvent(
-        job_name=payload.job_name,
-        build_number=payload.build_number,
-        build_url=payload.build_url,
-        phase=payload.phase,
-    )
+    event = JenkinsBuildEvent(**payload.model_dump())
     background_tasks.add_task(jenkins_failure_callback, event)
     return JSONResponse(
         {
@@ -59,23 +56,31 @@ async def jenkins_webhook(
     )
 
 
-@app.post("/webhook/jenkins/staging")
-async def jenkins_staging_webhook(
+@app.post("/webhook/jenkins/build_start")
+async def jenkins_build_start_webhook(
     background_tasks: BackgroundTasks,
     payload: WebhookPayload,
 ) -> JSONResponse:
+    logger.info(
+        "收到 Jenkins webhook: job=%s build=#%s phase=%s",
+        payload.job_name,
+        payload.build_number,
+        payload.phase,
+    )
+
+    event = JenkinsBuildEvent(**payload.model_dump())
     try:
-        config = resolve_codebase(payload.job_name)
+        event.codebase_confg = resolve_codebase(event.job_name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    event = JenkinsBuildEvent(**payload.model_dump())
-    # Normalize aliases so repeated callbacks share the same notification state.
-    event.job_name = config.alias
-    background_tasks.add_task(notify_staging_ddl, event)
+
+    analyzing = event.phase == "CHECKOUT_COMPLETED"
+    if analyzing:
+        background_tasks.add_task(jenkins_start_callback, event)
     return JSONResponse(
         {
             "accepted": True,
-            "analyzing": True,
+            "analyzing": analyzing,
             "job_name": payload.job_name,
             "build_number": payload.build_number,
         },

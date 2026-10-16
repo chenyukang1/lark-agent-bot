@@ -22,6 +22,7 @@ def collect_build_changes(config: CodebaseConfig, build_number: int) -> BuildCha
     build = server.get_build_info(build_number)
     if "changeSet" not in build and "changeSets" not in build:
         raise ValueError("构建缺少 changeSet/changeSets，无法确定提交范围")
+
     change_sets = [build.get("changeSet") or {}, *(build.get("changeSets") or [])]
     ids = list(
         dict.fromkeys(
@@ -30,8 +31,10 @@ def collect_build_changes(config: CodebaseConfig, build_number: int) -> BuildCha
             for item in changes.get("items", [])
         )
     )
+
     if any(not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", cid) for cid in ids):
         raise ValueError("changeSet 中存在无效或缺失的 Git commit ID")
+
     repo = GitRepository(config.project_path, timeout=60)
     commits = {}
     patches = []
