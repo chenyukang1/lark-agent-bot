@@ -17,6 +17,7 @@ class BuildStartCommitsTest(unittest.IsolatedAsyncioTestCase):
         )
         for commit_ids in (["a" * 40], ["b" * 40, "a" * 40], []):
             with self.subTest(commit_ids=commit_ids):
+                event.build_number += 1
                 client = Mock()
                 client.get_build_info.return_value = {
                     "changeSet": {"items": [{"commitId": c} for c in commit_ids]}
@@ -38,6 +39,11 @@ class BuildStartCommitsTest(unittest.IsolatedAsyncioTestCase):
                     review.assert_awaited_once_with(event, commit_ids)
                 else:
                     review.assert_not_called()
+
+    def tearDown(self):
+        callback._running_builds.clear()
+        callback._pending_build_reports.clear()
+        callback._completed_builds.clear()
 
 
 class CommitListGroupingTest(unittest.TestCase):

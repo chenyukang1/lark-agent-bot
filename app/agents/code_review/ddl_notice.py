@@ -105,6 +105,10 @@ class DDLNoticeAgent:
                 logger.error(f"DDL 分析不完整: {report}")
                 continue
 
+            if report.find(REPORT_HEADER) == -1:
+                logger.error(f"DDL 输出报告格式不正确: {report}")
+                continue
+
             code_reports[open_id] = report
         return code_reports
 
@@ -131,7 +135,7 @@ class DDLNoticeAgent:
                 commits_by_email.setdefault(git_email, []).append(commit_id)
         return commits_by_email
 
-    def send_ddl_notice(self, code_reports: dict[str, str]):
+    async def send_ddl_notice(self, code_reports: dict[str, str]):
         if not code_reports:
             return
 
@@ -141,4 +145,4 @@ class DDLNoticeAgent:
                 receive_id=open_id,
                 report_content=report,
             )
-        self._lark_client.send_ddl_notice_card(payload)
+            await asyncio.to_thread(self._lark_client.send_ddl_notice_card, payload)

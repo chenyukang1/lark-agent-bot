@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from collections import OrderedDict
 
 import lark_oapi
 
@@ -15,6 +16,13 @@ from app.model import JenkinsBuildEvent
 from app.tools import JENKINS_CLIENT_POOL
 
 logger = logging.getLogger(__name__)
+
+# Process-local retry state. Keep active/partially sent builds until they finish;
+# bound the completed-build history to avoid retaining every build forever.
+_running_builds: set[tuple[str, int]] = set()
+_pending_build_reports: dict[tuple[str, int], dict[str, str]] = {}
+_completed_builds: OrderedDict[tuple[str, int], None] = OrderedDict()
+_COMPLETED_BUILD_LIMIT = 1024
 
 
 async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
@@ -68,21 +76,41 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
     )
 
 
-async def jenkins_start_callback(event: JenkinsBuildEvent):
+async def jenkins_start_callback(event: JenkinsBuildEvent) -> None:
     if not event.codebase_confg:
         return
 
-    jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(event.codebase_confg.alias)
-    build_info = await asyncio.to_thread(
-        jenkins_client.get_build_info, event.build_number
-    )
-    change_set = build_info.get("changeSet", {})
-    items = change_set.get("items", [])
-    if not items:
+    key = (event.codebase_confg.alias, event.build_number)
+    if key in _running_builds or key in _completed_builds:
         return
-    commit_ids = [item["commitId"] for item in items]
-    task = asyncio.create_task(ddl_notice_agent.review_code(event, commit_ids))
-    task.add_done_callback(lambda t: ddl_notice_agent.send_ddl_notice(t.result()))
+
+    # Claim before the first await so concurrent callbacks cannot both start.
+    _running_builds.add(key)
+    try:
+        if key not in _pending_build_reports:
+            jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(key[0])
+            build_info = await asyncio.to_thread(
+                jenkins_client.get_build_info, event.build_number
+            )
+            items = build_info.get("changeSet", {}).get("items", [])
+            commit_ids = [item["commitId"] for item in items]
+            reports = (
+                await ddl_notice_agent.review_code(event, commit_ids)
+                if commit_ids else {}
+            )
+            _pending_build_reports[key] = dict(reports)
+
+        pending = _pending_build_reports[key]
+        for open_id, report in list(pending.items()):
+            await ddl_notice_agent.send_ddl_notice({open_id: report})
+            del pending[open_id]
+
+        _completed_builds[key] = None
+        _pending_build_reports.pop(key)
+        while len(_completed_builds) > _COMPLETED_BUILD_LIMIT:
+            _completed_builds.popitem(last=False)
+    finally:
+        _running_builds.discard(key)
 
 
 def build_agent_instruction(event: JenkinsBuildEvent) -> str:
