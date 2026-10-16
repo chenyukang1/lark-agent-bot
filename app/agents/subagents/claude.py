@@ -75,17 +75,16 @@ class ClaudeCodeAgent(BaseSubAgent):
             prompt=prompt_with_image(),
             options=options,
         ):
-            print(message)
             if hasattr(message, "result") and message.result:
-                print(f"Claude result: {message.result}")
+                logger.info(f"Claude result: {message.result}")
                 return message.result
 
             # Print human-readable output
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, ThinkingBlock):
-                        print(f"Claude reasoning: {block.thinking}")
+                        logger.info(f"Claude reasoning: {block.thinking}")
                     elif isinstance(block, ToolUseBlock):
-                        print(f"Claude tool being called: {block.name}")
+                        logger.info(f"Claude tool being called: {block.name}")
             elif isinstance(message, ResultMessage):
-                print(f"Done: {message.subtype}")  # Final result
+                logger.info(f"Done: {message.subtype}")  # Final result

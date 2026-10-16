@@ -4,6 +4,7 @@ import logging
 from app.agents.subagents import SubAgentFactory
 from app.config import CodebaseConfig
 from app.lark import get_lark_client
+from app.lark.model import SendDDLNoticeCardPayload
 from app.lark.users import resolve_open_id
 from app.model import JenkinsBuildEvent
 from app.tools.git import GitRepository
@@ -129,3 +130,11 @@ class DDLNoticeAgent:
     def send_ddl_notice(self, code_reports: dict[str, str]):
         if not code_reports:
             return
+
+        for open_id, report in code_reports.items():
+            payload = SendDDLNoticeCardPayload(
+                receive_id_type="open_id",
+                receive_id=open_id,
+                report_content=report,
+            )
+        self._lark_client.send_ddl_notice_card(payload)
