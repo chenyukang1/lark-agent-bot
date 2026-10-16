@@ -8,7 +8,7 @@ from app.config import get_config
 
 class BaseSubAgent(ABC):
     @abstractmethod
-    async def run(self, work_dir: str, prompt: str) -> str:
+    async def run(self, *, work_dir: str, prompt: str, system_prompt: str) -> str:
         pass
 
 

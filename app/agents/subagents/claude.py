@@ -12,11 +12,6 @@ from claude_agent_sdk import (
 
 from app.agents.subagents import BaseSubAgent
 
-SYSTEM_PROMPT = """
-你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，定位最可能导致失败的提交人（committer）。
-为了节省Token成本，请只阅读提供给你的commit提交记录，无法确定时再找最近的提交记录。
-"""
-
 
 # Claude Code sdk agent
 class ClaudeCodeAgent(BaseSubAgent):
@@ -24,12 +19,12 @@ class ClaudeCodeAgent(BaseSubAgent):
         if os.getenv("ANTHROPIC_AUTH_TOKEN") is None:
             raise ValueError("ANTHROPIC_AUTH_TOKEN is not set")
 
-    async def run(self, work_dir: str, prompt: str) -> str | None:
+    async def run(self, work_dir: str, prompt: str, system_prompt: str) -> str | None:
         options = ClaudeAgentOptions(
             cwd=work_dir,
             allowed_tools=["Read", "Glob", "Grep", "Bash"],  # Auto-approve these tools
             permission_mode="dontAsk",
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt,
         )
 
         # Agentic loop: streams messages as Claude works

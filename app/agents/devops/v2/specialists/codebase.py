@@ -3,7 +3,7 @@ import json
 
 import lark_oapi as lark
 
-from app.agents.devops.v2.subagents import SubAgentFactory
+from app.agents.subagents import SubAgentFactory
 from app.tools.git import GitRepository
 
 ANALYSIS_PROMPT = """
@@ -32,6 +32,11 @@ git提交范围为 {commit_range},
 
 当你分析出最终根因并准备结束回答时，你必须在回答的最末尾另起一行，严格按照以下格式输出元数据标签（以便后台系统识别并转化飞书强提醒，严禁漏写）：
 $$METADATA:{{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人Git名字"}}$$
+"""
+
+SYSTEM_PROMPT = """
+你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，定位最可能导致失败的提交人（committer）。
+为了节省Token成本，请只阅读提供给你的commit提交记录，无法确定时再找最近的提交记录。
 """
 
 
@@ -63,5 +68,5 @@ class CodebaseAgent:
         )
 
         return await SubAgentFactory.get_sub_agent().run(
-            payload["project_path"], prompt
+            work_dir=payload["project_path"], prompt=prompt, system_prompt=SYSTEM_PROMPT
         )
