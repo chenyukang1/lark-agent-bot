@@ -11,6 +11,8 @@ from app.tools.git import GitRepository
 
 NO_DDL_CHANGES = "NO_DDL_CHANGES"
 ANALYSIS_INCOMPLETE = "DDL_ANALYSIS_INCOMPLETE"
+REPORT_HEADER = "## 🔔 数据库结构变更 SQL 提交提醒"
+
 
 CODE_REVIEW_PROMPT = """
 涉及的 Git 提交为: {commit_ids}
