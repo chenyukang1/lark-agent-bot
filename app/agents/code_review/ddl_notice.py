@@ -86,7 +86,6 @@ class DDLNoticeAgent:
                 prompt=prompt,
                 system_prompt=SYSTEM_PROMPT,
             )
-            print(f"report: {report}")
             if not isinstance(report, str) or not report.strip():
                 raise ValueError("DDL 分析未返回有效结果")
 
