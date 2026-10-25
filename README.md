@@ -14,10 +14,10 @@ lark-agent-bot provides an efficient way to troubleshoot CI/CD issues.
 
 The system connects Jenkins build events with agent-assisted codebase analysis and Lark notifications:
 
-1. **Jenkins webhook**: Jenkins sends build events to the webhook service to start troubleshooting.
-2. **Agent analysis**: The agent coordinates the investigation and delegates codebase analysis to a sub-agent. LLMs, tools, and task-specific prompts help examine build logs and relevant code changes to identify likely causes and suggest fixes.
-3. **Lark report**: The analysis results are delivered through the Lark bot so developers can review the findings in their chat workflow.
-4. **Developer feedback loop**: Developers review the report, address the issue, and trigger a new Jenkins build to verify the fix.
+1. **webhook**: Jenkins sends build events to the webhook service to start troubleshooting.
+2. **analysis**: The agent coordinates the investigation and delegates codebase analysis to a sub-agent. LLMs, tools, and task-specific prompts help examine build logs and relevant code changes to identify likely causes and suggest fixes.
+3. **report**: The analysis results are delivered through the Lark bot so developers can review the findings in their chat workflow.
+4. **feedback**: Developers review the report, address the issue, and trigger a new Jenkins build to verify the fix.
 
 ## Get-started
 
