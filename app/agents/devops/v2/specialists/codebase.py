@@ -16,7 +16,7 @@ git提交范围为 {commit_range},
 
 ## 🚨 Jenkins构建信息
 - **Job / 构建号**：{jenkins_job_name} #{build_number}
-- **构建链接**：[Jenkins 构建日志]({build_url})
+- **构建链接**：[Jenkins 构建日志]({build_url}/console)
 - **构建耗时**：{duration_ms}ms
 - **失败现象**：[一句话描述编译失败/测试失败/部署失败等]
 - **核心报错类型**：[例如：TypeError / DependencyResolutionException]
