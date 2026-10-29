@@ -67,6 +67,9 @@ class CodebaseAgent:
             server_errors=payload["server_errors"],
         )
 
-        return await self._sub_agent.run(
+        content = await self._sub_agent.run(
             work_dir=payload["project_path"], prompt=prompt, system_prompt=SYSTEM_PROMPT
         )
+        # 按报告首标题裁掉模型额外输出的引导语，保留正文和末尾元数据。
+        report_start = content.find("## 🚨 Jenkins构建信息")
+        return content[report_start:] if report_start >= 0 else content
