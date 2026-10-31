@@ -40,6 +40,7 @@ class WebhookTest(unittest.TestCase):
 
     def test_failure_dispatch_and_invalid_build_number(self):
         with (
+            patch.object(webhook, "resolve_codebase", return_value=MagicMock(alias="stage")),
             patch.object(
                 webhook, "jenkins_failure_callback", new_callable=AsyncMock
             ) as notify,

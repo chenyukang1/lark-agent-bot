@@ -1,3 +1,6 @@
+import asyncio
+
+from app.agents.devops.router import DevopsRouterDecision
 from app.agents.devops.router import DevopsRouter
 from app.agents.devops.v2.specialists.codebase import CodebaseAgent
 from app.agents.devops.v2.specialists.image import ImageAnalyzeAgent
@@ -11,6 +14,18 @@ class DevopsAgentV2:
         self.qa_agent = QaAgent()
         self.image_analyze_agent = ImageAnalyzeAgent()
         self.codebase_agent = CodebaseAgent()
+
+    async def analyze_failed_build(
+        self, alias: str, build_number: int, card_callback
+    ) -> tuple[DevopsRouterDecision, str]:
+        decision = DevopsRouterDecision(intent="troubleshoot", alias=alias)
+        card_callback(f"正在分析 Jenkins 构建 #{build_number}，请稍候...")
+        jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(alias)
+        payload = await asyncio.to_thread(
+            jenkins_client.get_failed_build_info, build_number
+        )
+        content = await self.codebase_agent.codebase_analysis(payload)
+        return decision, content
 
     async def handle_user_query(
         self, chat_id: str, open_id: str, user_input: str, card_callback

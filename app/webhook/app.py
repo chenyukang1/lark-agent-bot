@@ -45,6 +45,10 @@ async def jenkins_build_fail_webhook(
     )
 
     event = JenkinsBuildEvent(**payload.model_dump())
+    try:
+        event.codebase_confg = resolve_codebase(event.job_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     background_tasks.add_task(jenkins_failure_callback, event)
     return JSONResponse(
         {

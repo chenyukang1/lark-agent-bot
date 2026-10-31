@@ -28,6 +28,8 @@ class JenkinsClientTest(unittest.TestCase):
             "lastFailedBuild": {"number": 42, "url": "https://jenkins.example.com/42"}
         }
         self.server.get_build_info.return_value = {
+            "result": "FAILURE",
+            "url": "https://jenkins.example.com/42",
             "duration": 100,
             "changeSet": {"items": []},
         }
@@ -57,6 +59,13 @@ class JenkinsClientTest(unittest.TestCase):
         self.server.get_job_info.assert_called_once_with("folder/staging")
         self.server.get_build_info.assert_called_once_with("folder/staging", 42)
         self.server.get_build_console_output.assert_called_once_with("folder/staging", 42)
+
+    def test_exact_failed_build_does_not_consult_latest_build(self):
+        payload = json.loads(self.client.get_failed_build_info(41))
+        self.assertEqual(payload["build_number"], 41)
+        self.server.get_job_info.assert_not_called()
+        self.server.get_build_info.assert_called_once_with("folder/staging", 41)
+        self.server.get_build_console_output.assert_called_once_with("folder/staging", 41)
 
     def test_versioned_tools_use_new_client_signatures(self):
         for module in (v1_tools, v2_tools):

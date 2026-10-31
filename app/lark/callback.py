@@ -6,6 +6,7 @@ from collections import OrderedDict
 import lark_oapi
 
 from app.agents import ddl_notice_agent, devopsAgentV2
+from app.config import resolve_codebase
 from app.lark import get_lark_client
 from app.lark.handlers import handle_agent_output
 from app.lark.model import (
@@ -56,11 +57,11 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
 
     card_message_id = response_data.message_id
 
+    alias = resolve_codebase(event.job_name).alias
     task = asyncio.create_task(
-        devopsAgentV2.handle_user_query(
-            notify_chat_id,
-            notify_chat_id,
-            build_agent_instruction(event),
+        devopsAgentV2.analyze_failed_build(
+            alias,
+            event.build_number,
             lambda t: lark_client.update_alarm_card(
                 UpdateAlarmCardPayload(
                     message_id=card_message_id,
@@ -71,10 +72,27 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
         )
     )
     task.add_done_callback(
-        lambda t: handle_agent_output(
-            card_message_id, receive_id_type, notify_chat_id, t.result()
+        lambda t: _finish_failure_analysis(
+            t, card_message_id, receive_id_type, notify_chat_id
         )
     )
+
+
+def _finish_failure_analysis(
+    task: asyncio.Task, message_id: str, receive_id_type: str, receive_id: str
+) -> None:
+    try:
+        handle_agent_output(message_id, receive_id_type, receive_id, task.result())
+    except Exception:
+        logger.exception("Jenkins 构建失败分析异常: message_id=%s", message_id)
+        get_lark_client().update_alarm_card(
+            UpdateAlarmCardPayload(
+                message_id=message_id,
+                report_type="troubleshoot",
+                report_content="构建分析失败，请查看服务日志后重试。",
+                status="failed",
+            )
+        )
 
 
 async def jenkins_start_callback(event: JenkinsBuildEvent) -> None:
@@ -113,11 +131,3 @@ async def jenkins_start_callback(event: JenkinsBuildEvent) -> None:
             _completed_builds.popitem(last=False)
     finally:
         _running_builds.discard(key)
-
-
-def build_agent_instruction(event: JenkinsBuildEvent) -> str:
-    parts = [
-        f"Jenkins Job【{event.job_name}】构建失败，",
-        "请分析最可能导致失败的提交人（committer）。",
-    ]
-    return "".join(parts)

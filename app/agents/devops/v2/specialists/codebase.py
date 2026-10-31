@@ -9,6 +9,7 @@ from app.tools.git import GitRepository
 ANALYSIS_PROMPT = """
 本次涉及到的信息如下：
 git提交范围为 {commit_range},
+本次构建的 Jenkins changeSet 提交为 {commits},
 构建错误日志为 {build_errors}\n\n
 服务器启动日志为 {server_errors}\n\n
 
@@ -35,8 +36,9 @@ $$METADATA:{{"email": "找到的嫌疑人Git邮箱", "name": "找到的嫌疑人
 """
 
 SYSTEM_PROMPT = """
-你是一个资深的 CI/CD 排障专家，目标是从 Jenkins 最新一次失败构建中，定位最可能导致失败的提交人（committer）。
-为了节省Token成本，请只阅读提供给你的commit提交记录，无法确定时再找最近的提交记录。
+你是一个资深的 CI/CD 排障专家，目标是从指定的 Jenkins 失败构建中，定位最可能导致失败的提交人（committer）。
+只分析报告中指定构建的 Jenkins changeSet 提交，使用 git show 检查这些提交的实际 diff 和作者。
+结论必须引用报错片段及对应代码证据。若 changeSet 为空或证据不足，明确说明无法定位，不要猜测致命提交或责任人，也不要输出 METADATA 标签。
 """
 
 
@@ -55,7 +57,6 @@ class CodebaseAgent:
 
         repo = GitRepository(payload["project_path"], timeout=60)
         await asyncio.to_thread(repo.fetch)
-        await asyncio.to_thread(repo.switch_to_remote, payload["git_branch"])
 
         prompt = ANALYSIS_PROMPT.format(
             jenkins_job_name=payload["jenkins_job_name"],
@@ -63,6 +64,7 @@ class CodebaseAgent:
             build_url=payload["build_url"],
             duration_ms=payload["duration_ms"],
             commit_range=payload["commit_range"],
+            commits=json.dumps(payload.get("commits", []), ensure_ascii=False),
             build_errors=payload["build_errors"],
             server_errors=payload["server_errors"],
         )

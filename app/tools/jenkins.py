@@ -99,34 +99,38 @@ class JenkinsClient:
             if not last_failed_build:
                 raise JenkinsBuildException(f"{job_name} 当前没有失败构建记录")
 
-            failed_build_number, failed_build_url = (
-                last_failed_build["number"],
-                last_failed_build["url"],
-            )
-            build_info = self.get_build_info(failed_build_number)
-            console_log = self.get_build_console_output(failed_build_number)
-
-            commit_range = self._extract_commit_range(build_info)
-            build_errors = self.extract_jenkins_build_errors(console_log)
-            server_errors = self.extract_server_startup_errors(console_log)
-
-            payload = {
-                "jenkins_job_name": job_name,
-                "build_number": failed_build_number,
-                "build_url": failed_build_url,
-                "duration_ms": build_info.get("duration", 0),
-                "commit_range": commit_range,
-                "build_errors": build_errors,
-                "server_errors": server_errors,
-                "project_path": self._codebase_config.project_path,
-                "git_branch": self._codebase_config.git_branch,
-            }
-
-            return json.dumps(payload, ensure_ascii=False, indent=2)
+            failed_build_number = last_failed_build["number"]
+            return self.get_failed_build_info(failed_build_number)
 
         except Exception:
             logger.exception("获取 Jenkins 信息失败")
             return "获取 Jenkins 最新失败构建失败"
+
+    def get_failed_build_info(self, build_number: int) -> str:
+        """Read the exact failed build that produced a webhook event."""
+        build_info = self.get_build_info(build_number)
+        if build_info.get("result") != "FAILURE":
+            raise JenkinsBuildException(
+                f"构建 #{build_number} 的状态不是 FAILURE: {build_info.get('result')}"
+            )
+        console_log = self.get_build_console_output(build_number)
+        payload = {
+            "jenkins_job_name": self._codebase_config.jenkins_job_name,
+            "build_number": build_number,
+            "build_url": build_info["url"],
+            "duration_ms": build_info.get("duration", 0),
+            "commit_range": self._extract_commit_range(build_info),
+            "commits": [
+                {"id": item.get("commitId", ""), "message": item.get("msg", "")}
+                for item in build_info.get("changeSet", {}).get("items", [])
+                if item.get("commitId")
+            ],
+            "build_errors": self.extract_jenkins_build_errors(console_log),
+            "server_errors": self.extract_server_startup_errors(console_log),
+            "project_path": self._codebase_config.project_path,
+            "git_branch": self._codebase_config.git_branch,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
 
     def extract_jenkins_build_errors(
         self, console_log: str, max_lines: int = 60
