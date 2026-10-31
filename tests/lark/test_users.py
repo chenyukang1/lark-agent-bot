@@ -20,19 +20,23 @@ class ResolveOpenIdTest(unittest.TestCase):
         self.assertEqual(result, "ou_from_email")
 
     @patch.object(users, "get_config", new=lambda: {"notify_department_id": "od_test"})
-    @patch.object(users, "_find_users_by_department")
-    def test_resolves_by_name_when_only_name_provided(self, mock_find_users) -> None:
-        mock_find_users.return_value = {"张三": "ou_from_name"}
+    @patch.object(users, "get_lark_client")
+    def test_resolves_by_name_when_only_name_provided(self, get_client) -> None:
+        get_client.return_value.find_users_by_department.return_value = {
+            "张三": "ou_from_name"
+        }
 
         result = resolve_open_id(name="张三", email=None)
 
         self.assertEqual(result, "ou_from_name")
-        mock_find_users.assert_called_once_with("od_test")
+        get_client.return_value.find_users_by_department.assert_called_once_with("od_test")
 
     @patch.object(users, "get_config", new=lambda: {"notify_department_id": "od_test"})
-    @patch.object(users, "_find_users_by_department")
-    def test_name_lookup_is_case_insensitive(self, mock_find_users) -> None:
-        mock_find_users.return_value = {"zhangsan": "ou_lower"}
+    @patch.object(users, "get_lark_client")
+    def test_name_lookup_is_case_insensitive(self, get_client) -> None:
+        get_client.return_value.find_users_by_department.return_value = {
+            "zhangsan": "ou_lower"
+        }
 
         result = resolve_open_id(name="ZhangSan", email=None)
 
@@ -43,11 +47,13 @@ class ResolveOpenIdTest(unittest.TestCase):
         self.assertEqual(resolve_open_id(name="张三", email=None), "")
 
     @patch.object(users, "get_config", new=lambda: {"notify_department_id": "od_test"})
-    @patch.object(users, "_find_users_by_department")
+    @patch.object(users, "get_lark_client")
     def test_returns_empty_when_name_not_found_in_department(
-        self, mock_find_users
+        self, get_client
     ) -> None:
-        mock_find_users.return_value = {"李四": "ou_other"}
+        get_client.return_value.find_users_by_department.return_value = {
+            "李四": "ou_other"
+        }
         result = resolve_open_id(name="张三", email=None)
 
         self.assertEqual(result, "")
