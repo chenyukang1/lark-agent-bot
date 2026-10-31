@@ -52,6 +52,9 @@ class CodebaseOutputTest(unittest.IsolatedAsyncioTestCase):
     async def test_preserves_report_without_preamble(self):
         self.agent._sub_agent.run.return_value = self.report
         self.assertEqual(await self.agent.codebase_analysis(self.payload), self.report)
+        prompt = self.agent._sub_agent.run.call_args.kwargs["prompt"]
+        self.assertIn("test-job #42", prompt)
+        self.assertIn("定位证据", prompt)
 
     async def test_preserves_output_without_report_header(self):
         for content in ("无法完成分析，请检查仓库权限。", ""):
