@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
 from app.lark import callback
+from app.tools import BuildChanges
 
 
 class BuildStartDedupTest(unittest.IsolatedAsyncioTestCase):
@@ -16,18 +17,19 @@ class BuildStartDedupTest(unittest.IsolatedAsyncioTestCase):
             codebase_confg=SimpleNamespace(alias="stage"), build_number=42,
             job_name="jenkins-stage",
         )
-        self.client = Mock()
-        self.client.get_build_info.return_value = {
-            "changeSet": {"items": [{"commitId": "a" * 40}]}
-        }
+        self.changes = BuildChanges(
+            {"a" * 40: {"name": "Alice", "email": "alice@example.com"}}, ""
+        )
+        self.collect = Mock(return_value=self.changes)
         self.review = AsyncMock(return_value={"ou_a": "report a", "ou_b": "report b"})
         self.send = AsyncMock()
-        for target, name, replacement in (
-            (callback.JENKINS_CLIENT_POOL, "get_jenkins_client", Mock(return_value=self.client)),
-            (callback.ddl_notice_agent, "review_code", self.review),
-            (callback.ddl_notice_agent, "send_ddl_notice", self.send),
+        agent = SimpleNamespace(review_code=self.review, send_ddl_notice=self.send)
+        for name, replacement in (
+            ("collect_build_changes", self.collect),
+            ("resolve_open_id", Mock(return_value="ou_a")),
+            ("ddl_notice_agent", agent),
         ):
-            patcher = patch.object(target, name, replacement)
+            patcher = patch.object(callback, name, replacement)
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -49,7 +51,7 @@ class BuildStartDedupTest(unittest.IsolatedAsyncioTestCase):
             release.set()
             await task
         await callback.jenkins_start_callback(self.event)
-        self.client.get_build_info.assert_called_once()
+        self.collect.assert_called_once()
         self.review.assert_awaited_once()
         self.send.assert_awaited_once_with({"ou_a": "report a"})
 
@@ -60,17 +62,17 @@ class BuildStartDedupTest(unittest.IsolatedAsyncioTestCase):
         await callback.jenkins_start_callback(self.event)
         await callback.jenkins_start_callback(self.event)
         self.review.assert_awaited_once()
-        self.client.get_build_info.assert_called_once()
+        self.collect.assert_called_once()
         self.assertEqual(self.send.await_args_list, [
             call({"ou_a": "report a"}), call({"ou_b": "report b"}),
             call({"ou_b": "report b"}),
         ])
 
     async def test_fetch_and_review_failures_allow_retry(self):
-        self.client.get_build_info.side_effect = [
+        self.collect.side_effect = [
             RuntimeError("Jenkins unavailable"),
-            {"changeSet": {"items": [{"commitId": "a" * 40}]}},
-            {"changeSet": {"items": [{"commitId": "a" * 40}]}},
+            self.changes,
+            self.changes,
         ]
         self.review.side_effect = [RuntimeError("review failed"), {}]
         for _ in range(2):
@@ -78,7 +80,7 @@ class BuildStartDedupTest(unittest.IsolatedAsyncioTestCase):
                 await callback.jenkins_start_callback(self.event)
         await callback.jenkins_start_callback(self.event)
         await callback.jenkins_start_callback(self.event)
-        self.assertEqual(self.client.get_build_info.call_count, 3)
+        self.assertEqual(self.collect.call_count, 3)
         self.assertEqual(self.review.await_count, 2)
         self.send.assert_not_called()
 
@@ -91,9 +93,9 @@ class BuildStartDedupTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.review.await_count, 3)
 
     async def test_empty_changes_are_completed_without_review(self):
-        self.client.get_build_info.return_value = {"changeSet": {"items": []}}
+        self.collect.return_value = BuildChanges({}, "")
         await callback.jenkins_start_callback(self.event)
         await callback.jenkins_start_callback(self.event)
-        self.client.get_build_info.assert_called_once()
+        self.collect.assert_called_once()
         self.review.assert_not_called()
         self.send.assert_not_called()
