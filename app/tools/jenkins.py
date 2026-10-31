@@ -150,7 +150,7 @@ class JenkinsClient:
         payload = {
             "jenkins_job_name": self._codebase_config.jenkins_job_name,
             "build_number": build_number,
-            "build_url": build_info["url"],
+            "build_url": build_info["url"].rstrip("/"),
             "duration_ms": build_info.get("duration", 0),
             "commit_range": self._extract_commit_range(build_info),
             "commits": [

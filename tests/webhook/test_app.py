@@ -81,3 +81,31 @@ class WebhookTest(unittest.TestCase):
         with patch("uvicorn.run") as run:
             webhook.run_webhook_server()
         self.assertEqual(run.call_args.args[0], "app.webhook.app:app")
+
+    def test_configured_webhook_token_rejects_missing_or_wrong_header(self):
+        with (
+            patch.dict("os.environ", {"WEBHOOK_TOKEN": "test-secret"}),
+            patch.object(webhook, "resolve_codebase", return_value=MagicMock(alias="stage")),
+            patch.object(webhook, "jenkins_start_callback", new_callable=AsyncMock) as start,
+            patch.object(webhook, "jenkins_failure_callback", new_callable=AsyncMock) as fail,
+            TestClient(webhook.app) as client,
+        ):
+            for endpoint in ("build_start", "build_fail"):
+                self.assertEqual(
+                    client.post(f"/webhook/jenkins/{endpoint}", json=self.payload).status_code,
+                    401,
+                )
+                self.assertEqual(
+                    client.post(
+                        f"/webhook/jenkins/{endpoint}", json=self.payload,
+                        headers={"X-Webhook-Token": "wrong"},
+                    ).status_code,
+                    401,
+                )
+            response = client.post(
+                "/webhook/jenkins/build_fail", json=self.payload,
+                headers={"X-Webhook-Token": "test-secret"},
+            )
+            self.assertEqual(response.status_code, 200)
+            fail.assert_awaited_once()
+            start.assert_not_awaited()

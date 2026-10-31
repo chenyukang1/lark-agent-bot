@@ -1,10 +1,11 @@
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 
 import lark_oapi
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.config import get_config, resolve_codebase
@@ -27,6 +28,14 @@ app = FastAPI(title="Lark Agent Bot Webhook", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 
 
+def verify_webhook_token(request: Request) -> None:
+    expected = os.getenv("WEBHOOK_TOKEN")
+    if expected and not secrets.compare_digest(
+        request.headers.get("X-Webhook-Token", ""), expected
+    ):
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -36,7 +45,9 @@ async def health() -> dict[str, str]:
 async def jenkins_build_fail_webhook(
     background_tasks: BackgroundTasks,
     payload: WebhookPayload,
+    request: Request,
 ) -> JSONResponse:
+    verify_webhook_token(request)
     logger.info(
         "收到 Jenkins webhook: job=%s build=#%s phase=%s",
         payload.job_name,
@@ -64,7 +75,9 @@ async def jenkins_build_fail_webhook(
 async def jenkins_build_start_webhook(
     background_tasks: BackgroundTasks,
     payload: WebhookPayload,
+    request: Request,
 ) -> JSONResponse:
+    verify_webhook_token(request)
     logger.info(
         "收到 Jenkins webhook: job=%s build=#%s phase=%s",
         payload.job_name,
