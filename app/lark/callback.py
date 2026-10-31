@@ -73,16 +73,21 @@ async def jenkins_failure_callback(event: JenkinsBuildEvent) -> None:
     )
     task.add_done_callback(
         lambda t: _finish_failure_analysis(
-            t, card_message_id, receive_id_type, notify_chat_id
+            t, card_message_id, receive_id_type, notify_chat_id,
+            event.build_number,
         )
     )
 
 
 def _finish_failure_analysis(
-    task: asyncio.Task, message_id: str, receive_id_type: str, receive_id: str
+    task: asyncio.Task, message_id: str, receive_id_type: str, receive_id: str,
+    source_build_number: int,
 ) -> None:
     try:
-        handle_agent_output(message_id, receive_id_type, receive_id, task.result())
+        handle_agent_output(
+            message_id, receive_id_type, receive_id, task.result(),
+            source_build_number=source_build_number,
+        )
     except Exception:
         logger.exception("Jenkins 构建失败分析异常: message_id=%s", message_id)
         get_lark_client().update_alarm_card(

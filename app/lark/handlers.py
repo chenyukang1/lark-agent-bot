@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -27,6 +28,7 @@ from app.lark.model import (
 )
 from app.lark.users import resolve_open_id
 from app.tools import JENKINS_CLIENT_POOL
+from app.tools.build_tracker import BuildTracker
 
 from . import get_lark_client
 
@@ -225,7 +227,15 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 class P2CardActionTriggerHandler:
     def __init__(self) -> None:
         self._lark_client = get_lark_client()
+        self._tracker = BuildTracker()
         self._background_tasks: set[asyncio.Task[None]] = set()
+        for attempt in self._tracker.pending():
+            threading.Thread(
+                target=self._monitor_rebuild,
+                args=(attempt,),
+                daemon=True,
+                name=f"rebuild-{attempt['queue_id']}",
+            ).start()
 
     def handle(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         if not data.event:
@@ -261,6 +271,7 @@ class P2CardActionTriggerHandler:
                 open_id=open_id,
                 report_content=payload["report_content"],
                 alarm_time=payload["alarm_time"],
+                source_build_number=payload.get("source_build_number"),
             )
         )
         self._background_tasks.add(task)
@@ -283,24 +294,31 @@ class P2CardActionTriggerHandler:
         open_id: str,
         report_content: str,
         alarm_time: str,
+        source_build_number: int | None,
     ) -> None:
         try:
             jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(alias=alias)
-            build_detail = jenkins_client.trigger_jenkins_build()
-            self._lark_client.send_alarm_card(
-                SendAlarmCardPayload(
-                    receive_id_type="open_id",
-                    receive_id=open_id,
-                    report_content=build_detail,
-                )
+            queue_id = jenkins_client.queue_build()
+            self._tracker.record_queued(
+                card_message_id=message_id, alias=alias, open_id=open_id,
+                report_content=report_content, alarm_time=alarm_time,
+                source_build_number=source_build_number, queue_id=queue_id,
             )
-
-            if "失败" not in build_detail:
-                self._lark_client.mark_rebuild_card_resolved(
-                    message_id,
-                    report_content=report_content,
-                    alarm_time=alarm_time,
+            try:
+                self._lark_client.send_alarm_card(
+                    SendAlarmCardPayload(
+                        receive_id_type="open_id", receive_id=open_id,
+                        report_content=f"Jenkins 重建已进入队列 #{queue_id}，等待构建结果。",
+                    )
                 )
+            except Exception:
+                logger.exception("重建入队通知发送失败: message_id=%s", message_id)
+            self._monitor_rebuild({
+                "card_message_id": message_id, "alias": alias,
+                "open_id": open_id, "report_content": report_content,
+                "alarm_time": alarm_time, "queue_id": queue_id,
+                "result": None,
+            })
         except Exception:
             logger.exception(
                 "卡片回调后台构建或发卡失败: alias=%s, message_id=%s",
@@ -308,12 +326,63 @@ class P2CardActionTriggerHandler:
                 message_id,
             )
 
+    def _monitor_rebuild(self, attempt: dict) -> None:
+        message_id = attempt["card_message_id"]
+        try:
+            result = attempt["result"]
+            if result is None:
+                client = JENKINS_CLIENT_POOL.get_jenkins_client(attempt["alias"])
+                outcome = client.wait_for_build_result(attempt["queue_id"])
+                result = outcome["result"]
+                self._tracker.record_result(
+                    message_id, build_number=outcome["build_number"],
+                    build_url=outcome["build_url"], result=result,
+                )
+            else:
+                outcome = attempt
+            build_label = (
+                f"构建 #{outcome['build_number']}"
+                if outcome["build_number"] is not None
+                else f"队列 #{attempt['queue_id']}"
+            )
+            result_message = f"Jenkins {build_label} 结果：{result}"
+            if outcome["build_url"]:
+                result_message += f"\n构建链接：{outcome['build_url']}"
+            self._lark_client.send_alarm_card(
+                SendAlarmCardPayload(
+                    receive_id_type="open_id", receive_id=attempt["open_id"],
+                    report_content=result_message,
+                )
+            )
+            if result == "SUCCESS":
+                self._lark_client.mark_rebuild_card_resolved(
+                    message_id, report_content=attempt["report_content"],
+                    alarm_time=attempt["alarm_time"],
+                )
+            self._tracker.mark_notified(message_id)
+        except Exception:
+            logger.exception("跟踪 Jenkins 重建失败: message_id=%s", message_id)
+            try:
+                self._lark_client.send_alarm_card(
+                    SendAlarmCardPayload(
+                        receive_id_type="open_id", receive_id=attempt["open_id"],
+                        report_content=(
+                            f"Jenkins 队列 #{attempt['queue_id']} 的结果暂时无法确认。"
+                            "故障卡片仍待处理，请查看 Jenkins 构建状态。"
+                        ),
+                    )
+                )
+            except Exception:
+                logger.exception("重建跟踪异常通知发送失败: message_id=%s", message_id)
+
 
 def handle_agent_output(
     card_message_id: str,
     receive_id_type: str,
     receive_id: str,
     agent_output: tuple[str, str],
+    *,
+    source_build_number: int | None = None,
 ) -> None:
     output_result = parse_agent_output(agent_output)
     lark_client = get_lark_client()
@@ -351,6 +420,7 @@ def handle_agent_output(
                 "report_content": output_result.report_content,
                 "alias": output_result.decision.alias,
                 "alarm_time": alarm_time,
+                "source_build_number": source_build_number,
             }
 
 

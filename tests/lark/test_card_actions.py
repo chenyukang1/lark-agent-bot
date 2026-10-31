@@ -23,14 +23,23 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
         self.client = MagicMock()
         self.pool = MagicMock()
         self.jenkins = self.pool.get_jenkins_client.return_value
-        self.jenkins.trigger_jenkins_build.return_value = "已触发 Jenkins 打包任务"
+        self.jenkins.queue_build.return_value = 123
+        self.jenkins.wait_for_build_result.return_value = {
+            "build_number": 43,
+            "build_url": "https://jenkins.example.com/job/43/",
+            "result": "SUCCESS",
+        }
         self.enterContext(patch.object(handlers, "get_lark_client", return_value=self.client))
         self.enterContext(patch.object(handlers, "JENKINS_CLIENT_POOL", self.pool))
+        self.tracker = MagicMock()
+        self.tracker.pending.return_value = []
+        self.enterContext(patch.object(handlers, "BuildTracker", return_value=self.tracker))
         self.enterContext(patch.dict(handlers.card_states, {
             "om_card": {
                 "alias": "test_java",
                 "report_content": "故障分析结果",
                 "alarm_time": "2026-10-14 12:00:00",
+                "source_build_number": 42,
             },
         }, clear=True))
         self.handler = handlers.P2CardActionTriggerHandler()
@@ -54,7 +63,7 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
             loop.call_soon_threadsafe(build_started.set)
             if not release_build.wait(5):
                 raise TimeoutError("Test did not release Jenkins request")
-            return "已触发 Jenkins 打包任务"
+            return 123
 
         def send(payload):
             worker_threads.append(threading.get_ident())
@@ -62,7 +71,7 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
             if not release_send.wait(5):
                 raise TimeoutError("Test did not release card request")
 
-        self.jenkins.trigger_jenkins_build.side_effect = trigger
+        self.jenkins.queue_build.side_effect = trigger
         self.client.send_alarm_card.side_effect = send
         self.client.mark_rebuild_card_resolved.side_effect = (
             lambda *args, **kwargs: worker_threads.append(threading.get_ident())
@@ -86,25 +95,35 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
             release_send.set()
             await asyncio.wait_for(asyncio.gather(*tasks), 2)
 
-        payload = self.client.send_alarm_card.call_args.args[0]
+        payload = self.client.send_alarm_card.call_args_list[0].args[0]
         self.assertEqual(payload.receive_id_type, "open_id")
         self.assertEqual(payload.receive_id, "ou_operator")
-        self.assertEqual(payload.report_content, "已触发 Jenkins 打包任务")
+        self.assertIn("队列 #123", payload.report_content)
         self.client.mark_rebuild_card_resolved.assert_called_once_with(
             "om_card", report_content="故障分析结果", alarm_time="2026-10-14 12:00:00",
         )
-        self.assertEqual(len(worker_threads), 3)
+        self.assertEqual(len(worker_threads), 4)
         self.assertNotIn(loop_thread, worker_threads)
         self.assertFalse(self.handler._background_tasks)
 
     async def test_build_failure_is_sent_without_resolving_original_card(self):
-        self.jenkins.trigger_jenkins_build.return_value = "触发 Jenkins 打包失败: timeout"
+        self.jenkins.wait_for_build_result.return_value["result"] = "FAILURE"
         self.handler.handle(self.event)
         await asyncio.gather(*self.handler._background_tasks)
 
         payload = self.client.send_alarm_card.call_args.args[0]
-        self.assertEqual(payload.report_content, "触发 Jenkins 打包失败: timeout")
+        self.assertIn("结果：FAILURE", payload.report_content)
         self.client.mark_rebuild_card_resolved.assert_not_called()
+
+    async def test_result_lookup_error_leaves_card_pending(self):
+        self.jenkins.wait_for_build_result.side_effect = TimeoutError("timeout")
+        with self.assertLogs(handlers.logger, level="ERROR"):
+            self.handler.handle(self.event)
+            await asyncio.gather(*self.handler._background_tasks)
+        self.client.mark_rebuild_card_resolved.assert_not_called()
+        self.tracker.record_result.assert_not_called()
+        self.tracker.mark_notified.assert_not_called()
+        self.assertIn("无法确认", self.client.send_alarm_card.call_args.args[0].report_content)
 
     async def test_duplicate_callback_schedules_only_one_build(self):
         first_response = self.handler.handle(self.event)
@@ -114,13 +133,19 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first_response.toast.content, "已收到构建请求，正在后台触发")
         self.assertIsNone(second_response.toast)
         self.assertNotIn("om_card", handlers.card_states)
-        self.pool.get_jenkins_client.assert_called_once_with(alias="test_java")
-        self.jenkins.trigger_jenkins_build.assert_called_once_with()
+        self.assertEqual(self.pool.get_jenkins_client.call_count, 2)
+        self.jenkins.queue_build.assert_called_once_with()
+        self.tracker.record_queued.assert_called_once_with(
+            card_message_id="om_card", alias="test_java", open_id="ou_operator",
+            report_content="故障分析结果", alarm_time="2026-10-14 12:00:00",
+            source_build_number=42, queue_id=123,
+        )
 
     async def test_background_errors_are_logged_without_retriggering_build(self):
         for operation in (
             self.pool.get_jenkins_client,
-            self.jenkins.trigger_jenkins_build,
+            self.jenkins.queue_build,
+            self.jenkins.wait_for_build_result,
             self.client.send_alarm_card,
             self.client.mark_rebuild_card_resolved,
         ):
@@ -131,6 +156,7 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
                     "alias": "test_java",
                     "report_content": "故障分析结果",
                     "alarm_time": "2026-10-14 12:00:00",
+                    "source_build_number": 42,
                 }
                 operation.side_effect = RuntimeError("service unavailable")
                 try:
@@ -138,7 +164,7 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
                         self.handler.handle(self.event)
                         await asyncio.gather(*self.handler._background_tasks)
                     self.assertIn("message_id=om_card", logs.output[0])
-                    self.assertLessEqual(self.jenkins.trigger_jenkins_build.call_count, 1)
+                    self.assertLessEqual(self.jenkins.queue_build.call_count, 1)
                     self.assertFalse(self.handler._background_tasks)
                 finally:
                     operation.side_effect = None

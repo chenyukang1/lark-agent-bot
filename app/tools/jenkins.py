@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import time
 from threading import Lock
 
 import jenkins
@@ -62,7 +63,7 @@ class JenkinsClient:
         """使用指定别名的 Jenkins 配置触发一次构建。"""
         try:
             code_base_config = self._codebase_config
-            queue_id = self._server.build_job(code_base_config.jenkins_job_name)
+            queue_id = self.queue_build()
             logger.info(
                 f"Jenkins 打包已触发: job={code_base_config.jenkins_job_name}, queue_id={queue_id}"
             )
@@ -80,6 +81,38 @@ class JenkinsClient:
                 f"触发 Jenkins 打包失败: job={code_base_config.jenkins_job_name}"
             )
             return f"触发 Jenkins 打包失败: {e}"
+
+    def queue_build(self) -> int:
+        """Queue a build and return the Jenkins queue item ID."""
+        return self._server.build_job(self._codebase_config.jenkins_job_name)
+
+    def wait_for_build_result(
+        self, queue_id: int, *, timeout: float = 21600, poll_interval: float = 5
+    ) -> dict:
+        """Resolve a queued build and wait for its terminal Jenkins result."""
+        deadline = time.monotonic() + timeout
+        build_number = None
+        while time.monotonic() < deadline:
+            if build_number is None:
+                queue_item = self._server.get_queue_item(queue_id)
+                if queue_item.get("cancelled"):
+                    return {
+                        "build_number": None,
+                        "build_url": "",
+                        "result": "CANCELLED",
+                    }
+                executable = queue_item.get("executable") or {}
+                build_number = executable.get("number")
+            if build_number is not None:
+                build_info = self.get_build_info(build_number)
+                if build_info.get("result") is not None:
+                    return {
+                        "build_number": build_number,
+                        "build_url": build_info["url"],
+                        "result": build_info["result"],
+                    }
+            time.sleep(poll_interval)
+        raise TimeoutError(f"等待 Jenkins 队列 #{queue_id} 构建结果超时")
 
     def get_latest_failed_build_info(self) -> str:
         """
