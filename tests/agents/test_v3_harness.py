@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.agents.devops.v3 import AgentHarness, Decision, DevopsAgentV3
 
@@ -102,3 +103,41 @@ class HarnessTest(unittest.IsolatedAsyncioTestCase):
         result = await AgentHarness(model, [slow], timeout=0.05).run("a", "read")
         self.assertEqual(result.status, "completed")
         self.assertIn("TimeoutError", runner.ainvoke.call_args.args[0][-1].content)
+
+    async def test_model_failure_finishes_run_and_allows_follow_up(self):
+        model, _ = model_with(
+            RuntimeError("private credential"),
+            Decision(action="answer", content="recovered"),
+        )
+        harness = AgentHarness(model)
+        result = await harness.run("a", "read")
+        self.assertEqual(result.status, "failed")
+        self.assertNotIn("private credential", result.content)
+        self.assertEqual((await harness.run("a", "retry")).content, "recovered")
+
+    async def test_interrupt_can_resume_from_another_instance_with_shared_saver(self):
+        saver = InMemorySaver()
+        first_model, _ = model_with(Decision(action="ask", content="which project?"))
+        question = await AgentHarness(first_model, checkpointer=saver).run("a", "read")
+        second_model, _ = model_with(Decision(action="answer", content="api"))
+        response = await AgentHarness(second_model, checkpointer=saver).run(
+            "a", "api", question_id=question.question_id
+        )
+        self.assertEqual(response.content, "api")
+
+    async def test_invalid_tool_arguments_do_not_execute_tool(self):
+        calls = []
+
+        @tool
+        def lookup(project: str) -> str:
+            """Read a project."""
+            calls.append(project)
+            return project
+
+        model, runner = model_with(
+            Decision(action="tool", tool_name="lookup", arguments={}),
+            Decision(action="answer", content="missing project"),
+        )
+        await AgentHarness(model, [lookup]).run("a", "read")
+        self.assertEqual(calls, [])
+        self.assertIn("ValidationError", runner.ainvoke.call_args.args[0][-1].content)

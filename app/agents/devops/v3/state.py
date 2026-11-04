@@ -27,12 +27,12 @@ class AgentState(TypedDict, total=False):
     decision: dict[str, Any]
     model_calls: int
     tool_calls: int
-    status: Literal["running", "waiting_input", "completed", "limited"]
+    status: Literal["running", "waiting_input", "completed", "limited", "failed"]
     content: str
 
 
 class AgentResponse(BaseModel):
     thread_id: str
-    status: Literal["waiting_input", "completed", "limited"]
+    status: Literal["waiting_input", "completed", "limited", "failed"]
     content: str
     question_id: str | None = None

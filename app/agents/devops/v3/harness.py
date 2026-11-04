@@ -108,22 +108,30 @@ class AgentHarness:
     async def _decide(self, state: AgentState) -> dict:
         if state["model_calls"] >= self.max_model_calls:
             return {"status": "limited", "content": "本轮调查已达到模型调用上限，请缩小问题范围后继续。"}
-        result = await asyncio.wait_for(
-            self.model.ainvoke([self.system, *state["messages"]]), self.timeout
-        )
-        decision = Decision.model_validate(result)
+        try:
+            result = await asyncio.wait_for(
+                self.model.ainvoke([self.system, *state["messages"]]), self.timeout
+            )
+            decision = Decision.model_validate(result)
+        except Exception:
+            content = "模型调用失败或响应格式无效，请稍后重试。"
+            return {"status": "failed", "content": content,
+                    "model_calls": state["model_calls"] + 1,
+                    "messages": [AIMessage(content=content)]}
         update = {"decision": decision.model_dump(),
                   "model_calls": state["model_calls"] + 1, "status": "running"}
         if decision.action == "answer":
             update.update(status="completed", content=decision.content,
                           messages=[AIMessage(content=decision.content)])
+        elif decision.action == "ask":
+            update.update(status="waiting_input", content=decision.content)
         elif decision.action == "tool" and state["tool_calls"] >= self.max_tool_calls:
             update.update(status="limited", content="本轮调查已达到工具调用上限，请缩小问题范围后继续。")
         return update
 
     @staticmethod
     def _route(state: AgentState) -> str:
-        if state["status"] in ("completed", "limited"):
+        if state["status"] in ("completed", "limited", "failed"):
             return END
         return "clarify" if state["decision"]["action"] == "ask" else "execute"
 
@@ -149,4 +157,5 @@ class AgentHarness:
     def _clarify(state: AgentState) -> dict:
         question = state["decision"]["content"]
         answer = interrupt({"question": question})
-        return {"messages": [AIMessage(content=question), HumanMessage(content=answer)]}
+        return {"status": "running", "content": "",
+                "messages": [AIMessage(content=question), HumanMessage(content=answer)]}
