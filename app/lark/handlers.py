@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -27,6 +28,7 @@ from app.lark.model import (
 )
 from app.lark.users import resolve_open_id
 from app.tools import JENKINS_CLIENT_POOL
+from app.tools.build_tracker import BuildTracker
 
 from . import get_lark_client
 
@@ -225,6 +227,15 @@ class P2ImChatAccessEventBotP2PChatEnteredV1Handler:
 class P2CardActionTriggerHandler:
     def __init__(self) -> None:
         self._lark_client = get_lark_client()
+        self._tracker = BuildTracker()
+        self._background_tasks: set[asyncio.Task[None]] = set()
+        for attempt in self._tracker.pending():
+            threading.Thread(
+                target=self._monitor_rebuild,
+                args=(attempt,),
+                daemon=True,
+                name=f"rebuild-{attempt['queue_id']}",
+            ).start()
 
     def handle(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         if not data.event:
@@ -235,36 +246,134 @@ class P2CardActionTriggerHandler:
             logger.warning("Data event context None when card action trigger")
             return P2CardActionTriggerResponse()
 
-        payload = card_states[data.event.context.open_message_id]
+        message_id = data.event.context.open_message_id
+        open_id = data.event.operator.open_id if data.event.operator else None
+        if not message_id or not open_id:
+            logger.warning("Missing message ID or operator open ID in card action")
+            return P2CardActionTriggerResponse()
+
+        # Claim the card before yielding to the event loop so duplicate callbacks
+        # cannot schedule the same Jenkins build more than once.
+        payload = card_states.pop(message_id, None)
         if not payload:
             return P2CardActionTriggerResponse()
 
-        jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(payload["alias"])
-        jenkins_client.trigger_jenkins_build()
+        alias = payload["alias"]
+        if not alias:
+            return P2CardActionTriggerResponse()
+
+        # SDK 回调必须同步返回；Jenkins 和飞书的同步请求都在线程中执行。
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                self._trigger_build_and_send_card,
+                alias=alias,
+                message_id=message_id,
+                open_id=open_id,
+                report_content=payload["report_content"],
+                alarm_time=payload["alarm_time"],
+                source_build_number=payload.get("source_build_number"),
+            )
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
         return P2CardActionTriggerResponse(
             {
                 "toast": {
                     "type": "info",
-                    "content": "卡片交互成功",
-                    "i18n": {
-                        "zh_cn": "卡片交互成功",
-                        "en_us": "card action success",
-                    },
-                },
-                "card": {
-                    "type": "template",
-                    "data": {
-                        "template_id": self._lark_client.rebuild_card_id,
-                        "template_variable": {
-                            "title": "[已完成] 构建故障处理完成",
-                            "header_color": "green",
-                            "report_content": payload["report_content"],
-                            "alarm_time": payload["alarm_time"],
-                        },
-                    },
+                    "content": "已收到构建请求，正在后台触发",
                 },
             }
         )
+
+    def _trigger_build_and_send_card(
+        self,
+        *,
+        alias: str,
+        message_id: str,
+        open_id: str,
+        report_content: str,
+        alarm_time: str,
+        source_build_number: int | None,
+    ) -> None:
+        try:
+            jenkins_client = JENKINS_CLIENT_POOL.get_jenkins_client(alias=alias)
+            queue_id = jenkins_client.queue_build()
+            self._tracker.record_queued(
+                card_message_id=message_id, alias=alias, open_id=open_id,
+                report_content=report_content, alarm_time=alarm_time,
+                source_build_number=source_build_number, queue_id=queue_id,
+            )
+            try:
+                self._lark_client.send_alarm_card(
+                    SendAlarmCardPayload(
+                        receive_id_type="open_id", receive_id=open_id,
+                        report_content=f"Jenkins 重建已进入队列 #{queue_id}，等待构建结果。",
+                    )
+                )
+            except Exception:
+                logger.exception("重建入队通知发送失败: message_id=%s", message_id)
+            self._monitor_rebuild({
+                "card_message_id": message_id, "alias": alias,
+                "open_id": open_id, "report_content": report_content,
+                "alarm_time": alarm_time, "queue_id": queue_id,
+                "result": None,
+            })
+        except Exception:
+            logger.exception(
+                "卡片回调后台构建或发卡失败: alias=%s, message_id=%s",
+                alias,
+                message_id,
+            )
+
+    def _monitor_rebuild(self, attempt: dict) -> None:
+        message_id = attempt["card_message_id"]
+        try:
+            result = attempt["result"]
+            if result is None:
+                client = JENKINS_CLIENT_POOL.get_jenkins_client(attempt["alias"])
+                outcome = client.wait_for_build_result(attempt["queue_id"])
+                result = outcome["result"]
+                self._tracker.record_result(
+                    message_id, build_number=outcome["build_number"],
+                    build_url=outcome["build_url"], result=result,
+                )
+            else:
+                outcome = attempt
+            build_label = (
+                f"构建 #{outcome['build_number']}"
+                if outcome["build_number"] is not None
+                else f"队列 #{attempt['queue_id']}"
+            )
+            result_message = f"Jenkins {build_label} 结果：{result}"
+            if outcome["build_url"]:
+                result_message += f"\n构建链接：{outcome['build_url']}"
+            self._lark_client.send_alarm_card(
+                SendAlarmCardPayload(
+                    receive_id_type="open_id", receive_id=attempt["open_id"],
+                    report_content=result_message,
+                )
+            )
+            if result == "SUCCESS":
+                self._lark_client.mark_rebuild_card_resolved(
+                    message_id, report_content=attempt["report_content"],
+                    alarm_time=attempt["alarm_time"],
+                )
+            self._tracker.mark_notified(message_id)
+        except Exception:
+            logger.exception("跟踪 Jenkins 重建失败: message_id=%s", message_id)
+            try:
+                self._lark_client.send_alarm_card(
+                    SendAlarmCardPayload(
+                        receive_id_type="open_id", receive_id=attempt["open_id"],
+                        report_content=(
+                            f"Jenkins 队列 #{attempt['queue_id']} 的结果暂时无法确认。"
+                            "故障卡片仍待处理，请查看 Jenkins 构建状态。"
+                        ),
+                    )
+                )
+            except Exception:
+                logger.exception("重建跟踪异常通知发送失败: message_id=%s", message_id)
 
 
 def handle_agent_output(
@@ -272,6 +381,8 @@ def handle_agent_output(
     receive_id_type: str,
     receive_id: str,
     agent_output: tuple[str, str],
+    *,
+    source_build_number: int | None = None,
 ) -> None:
     output_result = parse_agent_output(agent_output)
     lark_client = get_lark_client()
@@ -309,6 +420,7 @@ def handle_agent_output(
                 "report_content": output_result.report_content,
                 "alias": output_result.decision.alias,
                 "alarm_time": alarm_time,
+                "source_build_number": source_build_number,
             }
 
 
@@ -345,7 +457,7 @@ def parse_agent_output(agent_output) -> AgentOutputResult:
 def _build_notify_content(metadata: dict):
     git_email = metadata.get("email")
     git_name = metadata.get("name")
-    open_id = resolve_open_id(git_name, git_email)
+    open_id = resolve_open_id(name=git_name, email=git_email)
     if open_id:
         feishu_at_tag = f'<at user_id="{open_id}"></at>'
     elif git_name:
