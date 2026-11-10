@@ -16,6 +16,7 @@ with patch("app.config.get_config", return_value={
     from app.lark import handlers
 
 from app.lark.client import LarkClient
+from app.tools.jenkins import JenkinsBuildBusyError
 
 
 class CardActionTest(unittest.IsolatedAsyncioTestCase):
@@ -115,6 +116,21 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("结果：FAILURE", payload.report_content)
         self.client.mark_rebuild_card_resolved.assert_not_called()
 
+    async def test_busy_build_sends_failure_and_allows_retry_without_tracking(self):
+        self.jenkins.queue_build.side_effect = JenkinsBuildBusyError("构建 #42 正在执行")
+        self.handler.handle(self.event)
+        await asyncio.gather(*self.handler._background_tasks)
+
+        payload = self.client.send_message.call_args.args[0]
+        text = json.loads(payload.content)["text"]
+        self.assertIn("重建失败", text)
+        self.assertIn("#42 正在执行", text)
+        self.client.send_alarm_card.assert_not_called()
+        self.tracker.record_queued.assert_not_called()
+        self.jenkins.wait_for_build_result.assert_not_called()
+        self.client.mark_rebuild_card_resolved.assert_not_called()
+        self.assertIn("om_card", handlers.card_states)
+
     async def test_result_lookup_error_leaves_card_pending(self):
         self.jenkins.wait_for_build_result.side_effect = TimeoutError("timeout")
         with self.assertLogs(handlers.logger, level="ERROR"):
@@ -184,6 +200,17 @@ class CardActionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class RebuildCardUpdateTest(unittest.TestCase):
+    def test_package_rejection_has_failed_status(self):
+        decision = handlers.DevopsRouterDecision(intent="package", alias="stage")
+        for content, expected in (
+            ("触发 Jenkins 打包失败: 构建 #42 正在执行", "failed"),
+            ("已触发 Jenkins 打包任务【stage】", "success"),
+        ):
+            with self.subTest(content=content):
+                result = handlers.parse_agent_output((decision, content))
+                self.assertEqual(result.status, expected)
+                self.assertEqual(result.report_content, content)
+
     def test_background_card_update_preserves_report_and_alarm_time(self):
         client = object.__new__(LarkClient)
         client.rebuild_card_id = "rebuild_template"

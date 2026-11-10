@@ -29,6 +29,7 @@ from app.lark.model import (
 from app.lark.users import resolve_open_id
 from app.tools import JENKINS_CLIENT_POOL
 from app.tools.build_tracker import BuildTracker
+from app.tools.jenkins import JenkinsBuildBusyError
 
 from . import get_lark_client
 
@@ -319,6 +320,22 @@ class P2CardActionTriggerHandler:
                 "alarm_time": alarm_time, "queue_id": queue_id,
                 "result": None,
             })
+        except JenkinsBuildBusyError as exc:
+            card_states[message_id] = {
+                "alias": alias, "report_content": report_content,
+                "alarm_time": alarm_time, "source_build_number": source_build_number,
+            }
+            try:
+                self._lark_client.send_message(
+                    SendMessagePayload(
+                        receive_id_type="open_id", receive_id=open_id,
+                        msg_type="text", content=json.dumps(
+                            {"text": f"触发 Jenkins 重建失败：{exc}"}, ensure_ascii=False
+                        ),
+                    )
+                )
+            except Exception:
+                logger.exception("重建拒绝通知发送失败: message_id=%s", message_id)
         except Exception:
             logger.exception(
                 "卡片回调后台构建或发卡失败: alias=%s, message_id=%s",
@@ -445,7 +462,11 @@ def parse_agent_output(agent_output) -> AgentOutputResult:
             open_id, notify_content = None, None
             report_content = content
 
-        status = "success"
+        status = (
+            "failed"
+            if decision.intent == "package" and content.startswith("触发 Jenkins 打包失败:")
+            else "success"
+        )
     except Exception as e:
         logger.exception("agent执行失败")
         open_id, notify_content = None, None

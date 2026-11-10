@@ -14,6 +14,7 @@ class RebuildResultTest(unittest.TestCase):
         )
         factory = patch("app.tools.jenkins.jenkins.Jenkins")
         self.server = factory.start().return_value
+        self.server.get_info.return_value = {"inQueue": False, "allBuilds": []}
         self.addCleanup(factory.stop)
         self.client = JenkinsClient(config)
 

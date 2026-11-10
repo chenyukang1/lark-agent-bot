@@ -45,6 +45,7 @@ class JenkinsClient:
             password=codebase_config.jenkins_token,
         )
         self._codebase_config = codebase_config
+        self._build_lock = Lock()
 
     def get_job_info(self) -> dict:
         return self._server.get_job_info(self._codebase_config.jenkins_job_name)
@@ -76,6 +77,8 @@ class JenkinsClient:
                 f"队列 ID：{queue_id}\n"
                 f"Jenkins 地址：[查看任务]({job_url})"
             )
+        except JenkinsBuildBusyError as e:
+            return f"触发 Jenkins 打包失败: {e}"
         except Exception as e:
             logger.exception(
                 f"触发 Jenkins 打包失败: job={code_base_config.jenkins_job_name}"
@@ -83,8 +86,33 @@ class JenkinsClient:
             return f"触发 Jenkins 打包失败: {e}"
 
     def queue_build(self) -> int:
-        """Queue a build and return the Jenkins queue item ID."""
-        return self._server.build_job(self._codebase_config.jenkins_job_name)
+        """Submit only when this Job has no running or queued build."""
+        job_name = self._codebase_config.jenkins_job_name
+        if not self._build_lock.acquire(blocking=False):
+            raise JenkinsBuildBusyError(f"任务【{job_name}】正在提交打包请求，请稍后重试。")
+        try:
+            item = "job/" + "/job/".join(job_name.split("/"))
+            # allBuilds also covers older concurrent builds and Pipelines waiting
+            # without an executor; scanning executors or lastBuild would miss them.
+            status = self._server.get_info(
+                item, query="?tree=inQueue,allBuilds[number,building]"
+            )
+            if not isinstance(status.get("inQueue"), bool) or not isinstance(
+                status.get("allBuilds"), list
+            ):
+                raise JenkinsBuildException("无法确认 Jenkins 任务状态，已取消本次打包。")
+            if status["inQueue"]:
+                raise JenkinsBuildBusyError(f"任务【{job_name}】已有打包任务在排队，请稍后重试。")
+            for build in status["allBuilds"]:
+                if not isinstance(build.get("building"), bool):
+                    raise JenkinsBuildException("无法确认 Jenkins 构建状态，已取消本次打包。")
+                if build["building"]:
+                    raise JenkinsBuildBusyError(
+                        f"任务【{job_name}】的构建 #{build['number']} 正在执行，请稍后重试。"
+                    )
+            return self._server.build_job(job_name)
+        finally:
+            self._build_lock.release()
 
     def wait_for_build_result(
         self, queue_id: int, *, timeout: float = 21600, poll_interval: float = 5
@@ -222,3 +250,7 @@ class JenkinsClient:
 
 class JenkinsBuildException(Exception):
     """Jenkins build exception"""
+
+
+class JenkinsBuildBusyError(JenkinsBuildException):
+    """The Job already has a queued, running, or locally submitting build."""
