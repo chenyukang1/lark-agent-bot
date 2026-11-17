@@ -1,7 +1,7 @@
 # Lark Agent Bot
 
 <p align="center">
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 Assist development and operations personnel in identifying and troubleshooting CI/CD and code build issues.
