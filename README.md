@@ -1,12 +1,12 @@
 # Lark Agent Bot
 
 <p align="center">
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  <strong>Assist development and operations personnel in identifying and troubleshooting CI/CD and code build issues.</strong><br>
 </p>
 
-Assist development and operations personnel in identifying and troubleshooting CI/CD and code build issues.
-
-## Background
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 As business operations expand, code repositories grow in size, and the complexity of code builds increases. Development and operations staff must spend a significant amount of time diagnosing and resolving code build issues.
 
